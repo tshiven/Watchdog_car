@@ -1,0 +1,9 @@
+.venv/
+venv/
+watchdog-env/
+__pycache__/
+*.pyc
+.DS_Store
+*.pt
+data/logs/*
+!data/logs/.gitkeep
