@@ -26,8 +26,11 @@ import numpy as np
 from ultralytics import YOLO
 
 DEFAULT_MODEL = "yolov8n.pt"
-DEFAULT_IMGSZ = 320
-DEFAULT_CONFIDENCE = 0.50
+# 320/0.50 measured 0/30 detections on a live feed with a person standing in
+# frame -- too coarse and too strict for real use. 640/0.25 measured reliable
+# person detection (0.94 confidence) on the same feed.
+DEFAULT_IMGSZ = 640
+DEFAULT_CONFIDENCE = 0.25
 
 Detection = dict
 
