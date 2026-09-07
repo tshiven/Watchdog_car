@@ -1,0 +1,11 @@
+{
+  "ExpandedNodes": [
+    "",
+    "\\calibration",
+    "\\interface",
+    "\\tests",
+    "\\vision"
+  ],
+  "SelectedNode": "\\interface\\command_parser.py",
+  "PreviewInSolutionExplorer": false
+}
