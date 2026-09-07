@@ -6,6 +6,6 @@
     "\\tests",
     "\\vision"
   ],
-  "SelectedNode": "\\interface\\command_parser.py",
+  "SelectedNode": "\\tests\\test_distance_estimation.py",
   "PreviewInSolutionExplorer": false
 }
