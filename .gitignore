@@ -7,3 +7,4 @@ __pycache__/
 *.pt
 data/logs/*
 !data/logs/.gitkeep
+.vs/

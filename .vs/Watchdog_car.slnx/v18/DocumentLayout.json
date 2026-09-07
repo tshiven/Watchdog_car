@@ -3,6 +3,30 @@
   "WorkspaceRootPath": "C:\\Users\\meiv3\\source\\repos\\Watchdog_car\\",
   "Documents": [
     {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\meiv3\\source\\repos\\Watchdog_car\\tests\\test_distance_estimation.py||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:tests\\test_distance_estimation.py||{8B382828-6202-11D1-8870-0000F87579D2}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\meiv3\\source\\repos\\Watchdog_car\\vision\\distance_estimation.py||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:vision\\distance_estimation.py||{8B382828-6202-11D1-8870-0000F87579D2}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\meiv3\\source\\repos\\Watchdog_car\\tests\\test_target_selector.py||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:tests\\test_target_selector.py||{8B382828-6202-11D1-8870-0000F87579D2}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\meiv3\\source\\repos\\Watchdog_car\\tests\\test_color_matcher.py||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:tests\\test_color_matcher.py||{8B382828-6202-11D1-8870-0000F87579D2}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\meiv3\\source\\repos\\Watchdog_car\\vision\\target_selector.py||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:vision\\target_selector.py||{8B382828-6202-11D1-8870-0000F87579D2}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\meiv3\\source\\repos\\Watchdog_car\\vision\\color_matcher.py||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:vision\\color_matcher.py||{8B382828-6202-11D1-8870-0000F87579D2}"
+    },
+    {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\meiv3\\source\\repos\\Watchdog_car\\interface\\command_parser.py||{8B382828-6202-11D1-8870-0000F87579D2}",
       "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:interface\\command_parser.py||{8B382828-6202-11D1-8870-0000F87579D2}"
     },
@@ -34,11 +58,84 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": 4,
+          "SelectedChildIndex": 3,
           "Children": [
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{1c4feeaa-4718-4aa9-859d-94ce25d182ba}"
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:128:0:{1fc202d4-d401-403c-9834-5b218574bb67}"
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:129:0:{1fc202d4-d401-403c-9834-5b218574bb67}"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "test_distance_estimation.py",
+              "DocumentMoniker": "C:\\Users\\meiv3\\source\\repos\\Watchdog_car\\tests\\test_distance_estimation.py",
+              "RelativeDocumentMoniker": "tests\\test_distance_estimation.py",
+              "ToolTip": "C:\\Users\\meiv3\\source\\repos\\Watchdog_car\\tests\\test_distance_estimation.py",
+              "RelativeToolTip": "tests\\test_distance_estimation.py",
+              "ViewState": "AgIAACcAAAAAAAAAAAAQwDAAAAAZAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.002457|",
+              "WhenOpened": "2026-09-07T22:44:21.808Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "distance_estimation.py",
+              "DocumentMoniker": "C:\\Users\\meiv3\\source\\repos\\Watchdog_car\\vision\\distance_estimation.py",
+              "RelativeDocumentMoniker": "vision\\distance_estimation.py",
+              "ToolTip": "C:\\Users\\meiv3\\source\\repos\\Watchdog_car\\vision\\distance_estimation.py",
+              "RelativeToolTip": "vision\\distance_estimation.py",
+              "ViewState": "AgIAABEAAAAAAAAAAAAIwCUAAAA6AAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.002457|",
+              "WhenOpened": "2026-09-07T22:42:19.534Z"
+            },
             {
               "$type": "Document",
               "DocumentIndex": 2,
+              "Title": "test_target_selector.py",
+              "DocumentMoniker": "C:\\Users\\meiv3\\source\\repos\\Watchdog_car\\tests\\test_target_selector.py",
+              "RelativeDocumentMoniker": "tests\\test_target_selector.py",
+              "ToolTip": "C:\\Users\\meiv3\\source\\repos\\Watchdog_car\\tests\\test_target_selector.py",
+              "RelativeToolTip": "tests\\test_target_selector.py",
+              "ViewState": "AgIAABIAAAAAAAAAAAAIwCwAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.002457|",
+              "WhenOpened": "2026-09-07T22:20:43.408Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "target_selector.py",
+              "DocumentMoniker": "C:\\Users\\meiv3\\source\\repos\\Watchdog_car\\vision\\target_selector.py",
+              "RelativeDocumentMoniker": "vision\\target_selector.py",
+              "ToolTip": "C:\\Users\\meiv3\\source\\repos\\Watchdog_car\\vision\\target_selector.py",
+              "RelativeToolTip": "vision\\target_selector.py",
+              "ViewState": "AgIAAD8AAAAAAAAAAAAAAFIAAAAZAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.002457|",
+              "WhenOpened": "2026-09-07T22:15:15.377Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 5,
+              "Title": "color_matcher.py",
+              "DocumentMoniker": "C:\\Users\\meiv3\\source\\repos\\Watchdog_car\\vision\\color_matcher.py",
+              "RelativeDocumentMoniker": "vision\\color_matcher.py",
+              "ToolTip": "C:\\Users\\meiv3\\source\\repos\\Watchdog_car\\vision\\color_matcher.py",
+              "RelativeToolTip": "vision\\color_matcher.py",
+              "ViewState": "AgIAAC4AAAAAAAAAAAAIwFsAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.002457|",
+              "WhenOpened": "2026-09-07T22:05:39.521Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 8,
               "Title": "test_serial_protocol.py",
               "DocumentMoniker": "C:\\Users\\meiv3\\source\\repos\\Watchdog_car\\tests\\test_serial_protocol.py",
               "RelativeDocumentMoniker": "tests\\test_serial_protocol.py",
@@ -46,8 +143,7 @@
               "RelativeToolTip": "tests\\test_serial_protocol.py",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.002457|",
-              "WhenOpened": "2026-09-07T20:14:28.541Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-09-07T20:14:28.541Z"
             },
             {
               "$type": "Document",
@@ -57,14 +153,13 @@
               "RelativeDocumentMoniker": "tests\\test_color_matcher.py",
               "ToolTip": "C:\\Users\\meiv3\\source\\repos\\Watchdog_car\\tests\\test_color_matcher.py",
               "RelativeToolTip": "tests\\test_color_matcher.py",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAB0AAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.002457|",
-              "WhenOpened": "2026-09-07T20:14:23.729Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-09-07T20:14:23.729Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 4,
+              "DocumentIndex": 9,
               "Title": "__init__.py",
               "DocumentMoniker": "C:\\Users\\meiv3\\source\\repos\\Watchdog_car\\interface\\__init__.py",
               "RelativeDocumentMoniker": "interface\\__init__.py",
@@ -72,12 +167,11 @@
               "RelativeToolTip": "interface\\__init__.py",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAAAcAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.002457|",
-              "WhenOpened": "2026-09-07T20:11:21.645Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-09-07T20:11:21.645Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 1,
+              "DocumentIndex": 7,
               "Title": "test_command_parser.py",
               "DocumentMoniker": "C:\\Users\\meiv3\\source\\repos\\Watchdog_car\\tests\\test_command_parser.py",
               "RelativeDocumentMoniker": "tests\\test_command_parser.py",
@@ -85,25 +179,23 @@
               "RelativeToolTip": "tests\\test_command_parser.py",
               "ViewState": "AgIAAA8AAAAAAAAAAAAAABMAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.002457|",
-              "WhenOpened": "2026-09-07T19:44:47.543Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-09-07T19:44:47.543Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 0,
+              "DocumentIndex": 6,
               "Title": "command_parser.py",
               "DocumentMoniker": "C:\\Users\\meiv3\\source\\repos\\Watchdog_car\\interface\\command_parser.py",
               "RelativeDocumentMoniker": "interface\\command_parser.py",
               "ToolTip": "C:\\Users\\meiv3\\source\\repos\\Watchdog_car\\interface\\command_parser.py",
               "RelativeToolTip": "interface\\command_parser.py",
-              "ViewState": "AgIAAGsAAAAAAAAAAAAAAHkAAAAAAAAAAAAAAA==",
+              "ViewState": "AgIAAHEAAAAAAAAAAAAAAHkAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.002457|",
-              "WhenOpened": "2026-09-07T18:38:18.208Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-09-07T18:38:18.208Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 5,
+              "DocumentIndex": 10,
               "Title": "camera.py",
               "DocumentMoniker": "C:\\Users\\meiv3\\source\\repos\\Watchdog_car\\vision\\camera.py",
               "RelativeDocumentMoniker": "vision\\camera.py",
@@ -111,8 +203,7 @@
               "RelativeToolTip": "vision\\camera.py",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAAAsAAAAUAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.002457|",
-              "WhenOpened": "2026-09-07T17:46:53.68Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-09-07T17:46:53.68Z"
             }
           ]
         }
