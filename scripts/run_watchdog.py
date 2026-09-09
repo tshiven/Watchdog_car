@@ -104,7 +104,7 @@ def render(frame, outcome: FrameOutcome, label: str):
     if outcome.bbox is not None:
         draw_target(frame, outcome.bbox, label.upper())
         draw_error_vector(frame, outcome.center)
-        draw_hud(frame, [f"{outcome.status}  dx={outcome.dx}  dy={outcome.dy}"])
+        draw_hud(frame, [f"{outcome.status}  err_x={outcome.dx}  err_y={outcome.dy}"])
     else:
         draw_hud(frame, [f"{outcome.status}  {label}"])
     return frame
@@ -158,6 +158,9 @@ def track_until_stopped(cam, detector, link, target_class, target_color, show_di
             dropped_frames = 0
 
             outcome = process_frame(frame, detector, tracker, target_class, target_color)
+
+            if outcome.status == STATUS_LOCKED:
+                print(f"err_x={outcome.dx}, err_y={outcome.dy}")
 
             if link is not None:
                 locked = outcome.status == STATUS_LOCKED
