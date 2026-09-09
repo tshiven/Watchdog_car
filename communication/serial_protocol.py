@@ -40,9 +40,15 @@ class SerialLink:
         self._serial = transport if transport is not None else _open_port(port, baudrate, timeout)
         self._buffer = b""
 
-    def send_center_error(self, dx: int, dy: int, locked: bool) -> None:
+    def send_center_error(self, dx: int, dy: int, locked: bool | None = None) -> None:
         """Send one center-error reading to the STM32."""
-        self._serial.write(encode_packet(dx, dy, locked))
+        packet = encode_packet(dx, dy)
+        self._serial.write(packet)
+        print(
+            f"TX err_x={max(-32768, min(32767, int(dx)))} "
+            f"err_y={max(-32768, min(32767, int(dy)))} "
+            f"bytes={' '.join(f'{byte:02X}' for byte in packet)}"
+        )
 
     def poll(self) -> list[Packet]:
         """Return every complete packet available right now; never blocks."""
@@ -112,7 +118,7 @@ def _run_demo() -> None:
     print(f"Sending test packets to {args.port}. Press Ctrl+C to stop.")
     try:
         for dx in range(-100, 101, 10):
-            link.send_center_error(dx, -dx, locked=True)
+            link.send_center_error(dx, -dx)
             for packet in link.poll():
                 print(f"Received: {packet}")
             time.sleep(0.1)

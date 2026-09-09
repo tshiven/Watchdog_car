@@ -35,11 +35,11 @@ def test_send_center_error_writes_encoded_packet():
     fake = FakeSerial()
     link = SerialLink("fake", transport=fake)
 
-    link.send_center_error(-30, 45, locked=True)
+    link.send_center_error(-30, 45)
 
     packet = decode_packet(fake.written)
     assert packet is not None
-    assert (packet.dx, packet.dy, packet.locked) == (-30, 45, True)
+    assert (packet.dx, packet.dy) == (-30, 45)
 
 
 def test_poll_returns_nothing_when_port_is_quiet():
@@ -49,7 +49,7 @@ def test_poll_returns_nothing_when_port_is_quiet():
 
 
 def test_poll_decodes_multiple_packets():
-    fake = FakeSerial(encode_packet(1, 2, locked=True) + encode_packet(3, 4, locked=False))
+    fake = FakeSerial(encode_packet(1, 2) + encode_packet(3, 4))
     link = SerialLink("fake", transport=fake)
 
     packets = link.poll()
@@ -58,7 +58,7 @@ def test_poll_decodes_multiple_packets():
 
 
 def test_poll_reassembles_packet_split_across_reads():
-    data = encode_packet(11, 22, locked=True)
+    data = encode_packet(11, 22)
     fake = FakeSerial(data[:3])
     link = SerialLink("fake", transport=fake)
 

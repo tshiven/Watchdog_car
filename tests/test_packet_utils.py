@@ -12,37 +12,32 @@ from communication.packet_utils import (
 
 
 def test_encoded_packet_has_fixed_size_and_sync_prefix():
-    data = encode_packet(10, -20, locked=True)
+    data = encode_packet(10, -20)
 
     assert len(data) == PACKET_SIZE
     assert data.startswith(SYNC_BYTES)
+    assert data[2] == 4
 
 
 def test_round_trip_preserves_values():
-    packet = decode_packet(encode_packet(-150, 275, locked=True))
+    packet = decode_packet(encode_packet(-150, 275))
 
     assert packet is not None
     assert packet.dx == -150
     assert packet.dy == 275
-    assert packet.locked is True
-
-
-def test_round_trip_unlocked_flag():
-    packet = decode_packet(encode_packet(0, 0, locked=False))
-
-    assert packet is not None
-    assert packet.locked is False
 
 
 def test_decode_rejects_corrupted_checksum():
-    data = bytearray(encode_packet(10, 20, locked=True))
+    data = bytearray(encode_packet(10, 20))
     data[-1] ^= 0xFF
 
     assert decode_packet(bytes(data)) is None
 
 
 def test_decode_rejects_wrong_length():
-    assert decode_packet(encode_packet(1, 2, locked=True)[:-1]) is None
+    data = bytearray(encode_packet(1, 2))
+    data[2] = 3
+    assert decode_packet(bytes(data)) is None
 
 
 def test_decode_rejects_missing_sync():
@@ -50,7 +45,7 @@ def test_decode_rejects_missing_sync():
 
 
 def test_values_are_clamped_to_int16_range():
-    packet = decode_packet(encode_packet(999999, -999999, locked=False))
+    packet = decode_packet(encode_packet(999999, -999999))
 
     assert packet is not None
     assert packet.dx == INT16_MAX
@@ -58,7 +53,7 @@ def test_values_are_clamped_to_int16_range():
 
 
 def test_find_packet_skips_leading_garbage():
-    stream = b"\x01\x02\x03" + encode_packet(5, 6, locked=True)
+    stream = b"\x01\x02\x03" + encode_packet(5, 6)
 
     packet, rest = find_packet(stream)
 
@@ -68,7 +63,7 @@ def test_find_packet_skips_leading_garbage():
 
 
 def test_find_packet_returns_remaining_bytes():
-    stream = encode_packet(1, 2, locked=True) + encode_packet(3, 4, locked=False)
+    stream = encode_packet(1, 2) + encode_packet(3, 4)
 
     first, rest = find_packet(stream)
     second, remainder = find_packet(rest)
@@ -79,7 +74,7 @@ def test_find_packet_returns_remaining_bytes():
 
 
 def test_find_packet_buffers_incomplete_packet():
-    partial = encode_packet(7, 8, locked=True)[:-2]
+    partial = encode_packet(7, 8)[:-2]
 
     packet, rest = find_packet(partial)
 
@@ -88,9 +83,9 @@ def test_find_packet_buffers_incomplete_packet():
 
 
 def test_find_packet_recovers_after_corrupt_packet():
-    corrupt = bytearray(encode_packet(1, 1, locked=True))
+    corrupt = bytearray(encode_packet(1, 1))
     corrupt[-1] ^= 0xFF
-    stream = bytes(corrupt) + encode_packet(42, 43, locked=True)
+    stream = bytes(corrupt) + encode_packet(42, 43)
 
     packet, _ = find_packet(stream)
 

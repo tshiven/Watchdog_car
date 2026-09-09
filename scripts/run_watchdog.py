@@ -21,11 +21,13 @@ if __name__ == "__main__":  # Allow running this file directly, not just with -m
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import argparse
+import struct
+import time
 from dataclasses import dataclass
 
 import cv2
+import serial
 
-from communication.serial_protocol import SerialError, SerialLink
 from interface.command_parser import parse_command
 from vision.camera import Camera, CameraError
 from vision.color_matcher import HSV_RANGES, color_match_score
@@ -51,6 +53,8 @@ MIN_COLOR_MATCH = 0.15
 STATUS_SEARCHING = "SEARCHING"
 STATUS_LOCKED = "LOCKED"
 STATUS_LOST = "LOST"
+SERIAL_PORT = "COM3"
+SERIAL_BAUDRATE = 115200
 
 
 @dataclass
@@ -149,7 +153,7 @@ def resolve_target(command: str, detector) -> tuple[str, str | None] | None:
     return target_class, target_color
 
 
-def track_until_stopped(cam, detector, link, target_class, target_color, show_display) -> None:
+def track_until_stopped(cam, detector, ser, target_class, target_color, show_display) -> None:
     """Follow one target until the user stops it or the camera gives out."""
     label = f"{target_color} {target_class}" if target_color else target_class
     print(f"\nTarget: {label}")
@@ -158,6 +162,10 @@ def track_until_stopped(cam, detector, link, target_class, target_color, show_di
     tracker = Tracker(frame_width=cam.width, frame_height=cam.height)
     last_status = None
     dropped_frames = 0
+    serial_rx_buffer = b""
+    serial_response_received = False
+    serial_warning_printed = False
+    serial_wait_started = time.monotonic()
     try:
         while True:
             frame = cam.read()
@@ -174,11 +182,46 @@ def track_until_stopped(cam, detector, link, target_class, target_color, show_di
             if outcome.status == STATUS_LOCKED:
                 print(f"err_x={outcome.dx}, err_y={outcome.dy}")
 
-            if link is not None:
+            if ser is not None:
                 locked = outcome.status == STATUS_LOCKED
-                link.send_center_error(
-                    outcome.dx if locked else 0, outcome.dy if locked else 0, locked
-                )
+                err_x = max(-32768, min(32767, int(outcome.dx if locked else 0)))
+                err_y = max(-32768, min(32767, int(outcome.dy if locked else 0)))
+                payload = struct.pack("<hh", err_x, err_y)
+                checksum = 4
+                for byte in payload:
+                    checksum ^= byte
+                packet = b"\xAA\x55" + bytes([4]) + payload + bytes([checksum])
+                print(f"VISION TX: err_x={err_x} err_y={err_y}")
+                try:
+                    sent = ser.write(packet)
+                    print(f"SENT {sent} BYTES")
+                except Exception as exc:
+                    print(f"SERIAL WRITE ERROR: {exc!r}")
+                    ser.close()
+                    ser = None
+
+                if ser is not None and ser.in_waiting > 0:
+                    try:
+                        while ser.in_waiting > 0:
+                            serial_rx_buffer += ser.readline()
+                            if b"\n" not in serial_rx_buffer:
+                                break
+                            complete_lines = serial_rx_buffer.split(b"\n")
+                            serial_rx_buffer = complete_lines.pop()
+                            for line in complete_lines:
+                                received_line = line.rstrip(b"\r").decode(errors="replace")
+                                print(f"STM32 RX: {received_line}")
+                                serial_response_received = True
+                    except Exception as exc:
+                        print(f"SERIAL READ ERROR: {exc!r}")
+
+                if (
+                    not serial_response_received
+                    and not serial_warning_printed
+                    and time.monotonic() - serial_wait_started >= 2.0
+                ):
+                    print("WARNING: no STM32 response received")
+                    serial_warning_printed = True
 
             if outcome.status != last_status:
                 _announce(outcome, label)
@@ -199,7 +242,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run the Watchdog tracking system")
     parser.add_argument("--command", default=None, help='e.g. "find the orange cat"; prompts if omitted')
     parser.add_argument("--camera", type=int, default=0)
-    parser.add_argument("--port", default=None, help="Serial port for the STM32; omit to run without it")
+    parser.add_argument("--port", default=SERIAL_PORT, help="Serial port for the STM32")
     parser.add_argument("--confidence", type=float, default=None)
     parser.add_argument("--imgsz", type=int, default=None)
     parser.add_argument("--no-display", action="store_true", help="Run headless, without a preview window")
@@ -218,24 +261,27 @@ def main() -> None:
         print(exc)
         return
 
-    link = None
+    ser = None
     if args.port is not None:
+        print("SERIAL INIT START")
         try:
-            link = SerialLink(args.port)
-        except SerialError as exc:
-            print(f"{exc}\nContinuing without the serial link.")
+            ser = serial.Serial(args.port, SERIAL_BAUDRATE, timeout=0.0)
+            print(f"SERIAL OPEN {args.port} {SERIAL_BAUDRATE}")
+        except Exception as exc:
+            print(f"SERIAL OPEN ERROR: {exc!r}")
+            print("Continuing without the serial link.")
 
     show_display = not args.no_display
     print(
         f"Model on {detector.device}, camera {cam.width}x{cam.height}, "
-        f"serial {'-> ' + args.port if link is not None else 'disabled'}."
+        f"serial {'-> ' + args.port if ser is not None else 'disabled'}."
     )
 
     try:
         if args.command is not None:
             target = resolve_target(args.command, detector)
             if target is not None:
-                track_until_stopped(cam, detector, link, *target, show_display)
+                track_until_stopped(cam, detector, ser, *target, show_display)
             return
 
         print("\nWATCHDOG -- type what to find, or 'quit' to exit.")
@@ -252,12 +298,12 @@ def main() -> None:
 
             target = resolve_target(command, detector)
             if target is not None:
-                track_until_stopped(cam, detector, link, *target, show_display)
+                track_until_stopped(cam, detector, ser, *target, show_display)
     finally:
         print("Shutting down.")
         cam.release()
-        if link is not None:
-            link.close()
+        if ser is not None:
+            ser.close()
         cv2.destroyAllWindows()
 
 
