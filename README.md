@@ -1,6 +1,7 @@
 # Watchdog
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/47b81b6c-373d-4211-b505-6664327e55d9" width="400">
+  <img src="[https://github.com/user-attachments/assets/47b81b6c-373d-4211-b505-6664327e55d9](https://github.com/user-attachments/assets/775d158f-5c2f-4fdb-80bf-4c8da977f27c)" width="400">
+
 </p>
 > **Status: under active development.** The features described below are
 > the project's design goals, not a description of what currently works.
