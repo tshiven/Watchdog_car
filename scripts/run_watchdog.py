@@ -44,6 +44,10 @@ WINDOW_TITLE = "Watchdog"
 # Cameras drop frames -- measured a None on the very first read while warming
 # up, then 299/300 good frames. Only give up once they stop coming entirely.
 MAX_CONSECUTIVE_FRAME_FAILURES = 30
+# A candidate showing less than this fraction of the requested colour is not
+# the target, however confident or large it is. Low enough to survive a bbox
+# that includes background and a target that is partly shadowed.
+MIN_COLOR_MATCH = 0.15
 STATUS_SEARCHING = "SEARCHING"
 STATUS_LOCKED = "LOCKED"
 STATUS_LOST = "LOST"
@@ -73,12 +77,20 @@ def process_frame(frame, detector, tracker, target_class: str, target_color: str
     detections = detector.detect(frame)
     candidates = [d for d in detections if d["class_name"] == target_class]
 
+    color_scores = None
+    if target_color is not None:
+        # Scored every frame, not just the one that locks on: the tracker matches
+        # on position alone, so a wrong-coloured object passing near the target
+        # would otherwise capture the lock and keep it for good.
+        scored = [
+            (d, color_match_score(crop_to_bbox(frame, d["bbox"]), target_color))
+            for d in candidates
+        ]
+        matching = [(d, score) for d, score in scored if score >= MIN_COLOR_MATCH]
+        candidates = [d for d, _ in matching]
+        color_scores = [score for _, score in matching]
+
     if not tracker.is_tracking:
-        color_scores = None
-        if target_color is not None:
-            color_scores = [
-                color_match_score(crop_to_bbox(frame, d["bbox"]), target_color) for d in candidates
-            ]
         target = select_target(candidates, target_class, target_color, color_scores)
         if target is None:
             return FrameOutcome(detections=detections, status=STATUS_SEARCHING)

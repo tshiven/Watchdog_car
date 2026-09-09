@@ -26,6 +26,12 @@ import numpy as np
 MIN_SATURATION = 50
 MIN_VALUE = 50
 
+# Black/white/gray are defined by low saturation and/or low value, so the
+# saturation/value "valid pixel" filter below (meant to discard washed-out
+# pixels before chromatic hue matching) would zero out every pixel for these
+# colors and make them unmatchable. They're checked against the full crop.
+ACHROMATIC_COLORS = {"black", "white", "gray"}
+
 # OpenCV hue values range from 0 to 179.
 # Red requires two ranges because its hue wraps around 0/179.
 HSV_RANGES = {
@@ -52,13 +58,13 @@ HSV_RANGES = {
         (np.array([161, 50, 50]), np.array([179, 255, 255])),
     ],
     "black": [
-        (np.array([0, 0, 0]), np.array([179, 255, 49])),
+        (np.array([0, 0, 0]), np.array([179, 255, 90])),
     ],
     "white": [
         (np.array([0, 0, 200]), np.array([179, 49, 255])),
     ],
     "gray": [
-        (np.array([0, 0, 50]), np.array([179, 49, 199])),
+        (np.array([0, 0, 91]), np.array([179, 49, 199])),
     ],
     "brown": [
         (np.array([5, 60, 20]), np.array([25, 255, 180])),
@@ -78,10 +84,13 @@ def color_match_score(crop: np.ndarray, requested_color: str) -> float:
 
     hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
 
-    saturation = hsv[:, :, 1]
-    value = hsv[:, :, 2]
+    if requested_color in ACHROMATIC_COLORS:
+        valid_mask = np.ones(hsv.shape[:2], dtype=bool)
+    else:
+        saturation = hsv[:, :, 1]
+        value = hsv[:, :, 2]
 
-    valid_mask = (saturation >= MIN_SATURATION) & (value >= MIN_VALUE)
+        valid_mask = (saturation >= MIN_SATURATION) & (value >= MIN_VALUE)
 
     valid_pixel_count = int(np.count_nonzero(valid_mask))
 

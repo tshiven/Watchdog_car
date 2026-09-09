@@ -10,7 +10,6 @@ Will eventually handle:
 - Extracting object class and optional visual attributes
 - Falling back to simple prompt-based Q&A (object, then attribute)
 
-Not yet implemented.
 """
 # Common YOLO/COCO object classes that the parser can recognize.
 COCO_CLASSES = {
