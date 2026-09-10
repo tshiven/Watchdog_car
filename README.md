@@ -39,6 +39,8 @@ structure exists, but detection, color matching, tracking, serial
 communication, and firmware are **not yet implemented**. Nothing in this
 repository should be assumed to run end-to-end yet.
 
+This project's detection, color matching, and tracking are fully implemented. The serial communication is almost entirely set-up. Currently, we are working on the hardware side and waiting on some parts before we can upload a demo.
+
 ## System Architecture
 
 Planned high-level flow:
