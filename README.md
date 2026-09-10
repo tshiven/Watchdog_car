@@ -4,9 +4,7 @@
 </p>
 
 </p>
-> **Status: under active development.** The features described below are
-> the project's design goals, not a description of what currently works.
-> See [Current Status](#current-status) for what actually exists today.
+> **Status: under active development.** 
 
 ## Overview
 
