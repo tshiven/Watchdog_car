@@ -109,3 +109,155 @@ def test_update_with_no_candidates_holds_last_position_until_timeout():
 
     assert not result.lost
     assert result.bbox == (100, 100, 200, 200)
+
+
+def _small_fast_detection(x: int) -> dict:
+    """A bottle-sized box at horizontal position `x`."""
+    return _detection((x, 300, x + 60, 460), confidence=0.5)
+
+
+def test_small_object_is_followed_as_well_as_a_large_one():
+    # The bug this guards: the gate used to be a multiple of the target's own
+    # size, so a 110px bottle was allowed 110px of movement per frame while a
+    # 500px person was allowed 500px. Identical motion was followed for the
+    # person and dropped for the bottle.
+    tracker = Tracker(frame_width=1280, frame_height=720)
+    tracker.start(_small_fast_detection(600))
+
+    x = 600
+    for _ in range(5):
+        x += 140
+        result = tracker.update([_small_fast_detection(x)])
+
+        assert not result.lost
+        assert result.bbox == (x, 300, x + 60, 460)
+
+
+def test_person_sized_target_still_tracks():
+    tracker = Tracker(frame_width=1280, frame_height=720)
+    tracker.start(_detection((300, 60, 700, 660)))
+
+    x = 300
+    for _ in range(3):
+        x += 140
+        result = tracker.update([_detection((x, 60, x + 400, 660))])
+
+        assert result.bbox == (x, 60, x + 400, 660)
+
+
+def test_moving_target_is_re_acquired_after_a_detector_dropout():
+    tracker = Tracker(frame_width=1280, frame_height=720)
+    tracker.start(_small_fast_detection(600))
+
+    x = 600
+    for _ in range(3):
+        x += 140
+        tracker.update([_small_fast_detection(x)])
+
+    for _ in range(3):  # the detector loses a small object for a few frames
+        x += 140
+        assert tracker.update([]).coasting
+
+    x += 140
+    result = tracker.update([_small_fast_detection(x)])
+
+    assert not result.lost
+    assert result.bbox == (x, 300, x + 60, 460)
+
+
+def test_coasting_follows_the_targets_last_known_velocity():
+    tracker = Tracker(frame_width=1280, frame_height=720)
+    tracker.start(_small_fast_detection(600))
+    for x in (740, 880, 1020):
+        tracker.update([_small_fast_detection(x)])
+
+    coasted = tracker.update([])
+
+    assert coasted.coasting
+    assert coasted.bbox[0] > 1020  # carried on, not frozen where it was
+
+
+def test_coasting_is_reported_separately_from_a_confirmed_lock():
+    tracker = Tracker(frame_width=640, frame_height=480)
+    tracker.start(_detection((100, 100, 200, 200)))
+
+    assert not tracker.update([_detection((110, 100, 210, 200))]).coasting
+    assert tracker.update([]).coasting
+
+
+def test_a_stationary_target_that_vanishes_is_still_declared_lost():
+    # The gate opens along the target's velocity while it is missing. A target
+    # that was not moving must gain nothing from that, or a vanished target
+    # would start matching unrelated objects across the frame.
+    tracker = Tracker(frame_width=640, frame_height=480, max_missed_frames=2)
+    tracker.start(_detection((100, 100, 200, 200)))
+
+    unrelated = [_detection((500, 400, 550, 450))]
+    results = [tracker.update(unrelated) for _ in range(3)]
+
+    assert [r.lost for r in results] == [False, False, True]
+
+
+def test_a_box_of_a_wildly_different_size_is_not_adopted():
+    tracker = Tracker(frame_width=640, frame_height=480)
+    tracker.start(_detection((100, 100, 200, 200)))
+
+    result = tracker.update([_detection((140, 140, 160, 160))])  # 5x smaller
+
+    assert result.coasting
+    assert result.bbox == (100, 100, 200, 200)
+
+
+# --- Appearance matching ----------------------------------------------------
+# These need real pixels, so they build frames rather than bare detection dicts.
+
+import cv2  # noqa: E402
+import numpy as np  # noqa: E402
+
+
+def _bgr(hue: int, saturation: int = 200, value: int = 210) -> np.ndarray:
+    return cv2.cvtColor(
+        np.full((1, 1, 3), (hue, saturation, value), dtype=np.uint8), cv2.COLOR_HSV2BGR
+    )[0, 0]
+
+
+def _two_bottle_frame(orange_x: int, blue_x: int) -> np.ndarray:
+    frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+    frame[300:460, orange_x : orange_x + 60] = _bgr(15)
+    frame[300:460, blue_x : blue_x + 60] = _bgr(110)
+    return frame
+
+
+def test_a_different_object_passing_closer_does_not_steal_the_lock():
+    tracker = Tracker(frame_width=1280, frame_height=720)
+    tracker.start(_small_fast_detection(600), _two_bottle_frame(600, 900))
+
+    # The blue bottle cuts in nearer to the prediction than the orange one.
+    frame = _two_bottle_frame(700, 660)
+    result = tracker.update(
+        [_small_fast_detection(700), _small_fast_detection(660)], frame
+    )
+
+    assert result.bbox == (700, 300, 760, 460)
+
+
+def test_appearance_is_ignored_when_no_frame_is_supplied():
+    # The matching logic has to stay usable from plain detection dicts.
+    tracker = Tracker(frame_width=1280, frame_height=720)
+    tracker.start(_small_fast_detection(600))
+
+    assert not tracker.update([_small_fast_detection(700)]).lost
+
+
+def test_target_survives_a_lighting_change():
+    tracker = Tracker(frame_width=1280, frame_height=720)
+    bright = np.zeros((720, 1280, 3), dtype=np.uint8)
+    bright[300:460, 600:660] = _bgr(15, 200, 230)
+    tracker.start(_small_fast_detection(600), bright)
+
+    dim = np.zeros((720, 1280, 3), dtype=np.uint8)
+    dim[300:460, 700:760] = _bgr(16, 150, 140)
+    result = tracker.update([_small_fast_detection(700)], dim)
+
+    assert not result.lost
+    assert result.bbox == (700, 300, 760, 460)

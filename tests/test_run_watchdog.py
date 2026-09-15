@@ -134,3 +134,97 @@ def test_crop_to_bbox_clips_a_box_that_runs_past_the_frame_edge():
 
     assert crop.shape[0] == 100
     assert crop.shape[1] == 100
+
+
+def _hsv_bgr(hue: int, saturation: int = 200, value: int = 210):
+    import cv2
+
+    return cv2.cvtColor(
+        np.full((1, 1, 3), (hue, saturation, value), dtype=np.uint8), cv2.COLOR_HSV2BGR
+    )[0, 0]
+
+
+def _frame_with_object(bbox, color) -> np.ndarray:
+    frame = _blank_frame()
+    x1, y1, x2, y2 = bbox
+    frame[y1:y2, x1:x2] = color
+    return frame
+
+
+def test_lock_survives_a_frame_where_the_color_score_dips():
+    # The colour filter used to run on every frame and hide the target from
+    # the tracker whenever its score dipped -- a highlight, a shadow, a hand
+    # passing over it. A few such frames in a row ended the lock on an object
+    # that had not gone anywhere. Colour now decides only what to lock onto.
+    tracker = _tracker()
+    orange = _hsv_bgr(15)
+
+    lit = _frame_with_object((100, 100, 200, 200), orange)
+    first = process_frame(lit, FakeDetector([_detection((100, 100, 200, 200))]),
+                          tracker, "cat", "orange")
+    assert first.status == STATUS_LOCKED
+
+    # Same object, now washed out by a highlight: barely orange any more.
+    washed = _frame_with_object((110, 100, 210, 200), _hsv_bgr(15, 20, 250))
+    second = process_frame(washed, FakeDetector([_detection((110, 100, 210, 200))]),
+                           tracker, "cat", "orange")
+
+    assert second.status == STATUS_LOCKED
+    assert second.bbox == (110, 100, 210, 200)
+
+
+def test_a_wrongly_colored_object_is_not_locked_onto_in_the_first_place():
+    frame = _frame_with_object((100, 100, 200, 200), _hsv_bgr(110))  # blue
+
+    outcome = process_frame(frame, FakeDetector([_detection((100, 100, 200, 200))]),
+                            _tracker(), "cat", "orange")
+
+    assert outcome.status == STATUS_SEARCHING
+
+
+def test_class_matching_is_case_insensitive_end_to_end():
+    detection = _detection((100, 100, 200, 200), class_name="Cat")
+
+    outcome = process_frame(_blank_frame(), FakeDetector([detection]),
+                            _tracker(), "cat", None)
+
+    assert outcome.status == STATUS_LOCKED
+
+
+def test_a_mid_confidence_bottle_is_locked_onto():
+    detection = _detection((100, 100, 200, 200), class_name="bottle", confidence=0.42)
+
+    outcome = process_frame(_blank_frame(), FakeDetector([detection]),
+                            _tracker(), "bottle", None)
+
+    assert outcome.status == STATUS_LOCKED
+
+
+def test_a_fast_small_target_is_followed_across_frames():
+    tracker = Tracker(frame_width=1280, frame_height=720)
+    frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+
+    def bottle(x):
+        return _detection((x, 300, x + 60, 460), class_name="bottle", confidence=0.45)
+
+    x = 600
+    outcome = process_frame(frame, FakeDetector([bottle(x)]), tracker, "bottle", None)
+    assert outcome.status == STATUS_LOCKED
+
+    for _ in range(4):
+        x += 140
+        outcome = process_frame(frame, FakeDetector([bottle(x)]), tracker, "bottle", None)
+
+        assert outcome.status == STATUS_LOCKED
+        assert outcome.bbox == (x, 300, x + 60, 460)
+
+
+def test_coasting_is_reported_on_the_outcome():
+    tracker = _tracker()
+    process_frame(_blank_frame(), FakeDetector([_detection((100, 100, 200, 200))]),
+                  tracker, "cat", None)
+
+    outcome = process_frame(_blank_frame(), FakeDetector([]), tracker, "cat", None)
+
+    assert outcome.status == STATUS_LOCKED
+    assert outcome.coasting

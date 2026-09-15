@@ -67,6 +67,8 @@ class FrameOutcome:
     center: tuple[int, int] | None = None
     dx: int | None = None
     dy: int | None = None
+    # True while the target's position is predicted rather than detected.
+    coasting: bool = False
 
 
 def crop_to_bbox(frame, bbox: tuple[int, int, int, int]):
@@ -79,28 +81,41 @@ def crop_to_bbox(frame, bbox: tuple[int, int, int, int]):
 def process_frame(frame, detector, tracker, target_class: str, target_color: str | None) -> FrameOutcome:
     """Run one frame through detect -> select -> track."""
     detections = detector.detect(frame)
-    candidates = [d for d in detections if d["class_name"] == target_class]
+    wanted = target_class.strip().lower()
+    candidates = [d for d in detections if d["class_name"].strip().lower() == wanted]
 
-    color_scores = None
+    # Scored for every candidate on every frame, but used as a preference
+    # rather than a filter -- see the note below.
+    priors = None
     if target_color is not None:
-        # Scored every frame, not just the one that locks on: the tracker matches
-        # on position alone, so a wrong-coloured object passing near the target
-        # would otherwise capture the lock and keep it for good.
-        scored = [
-            (d, color_match_score(crop_to_bbox(frame, d["bbox"]), target_color))
+        priors = [
+            color_match_score(crop_to_bbox(frame, d["bbox"]), target_color)
             for d in candidates
         ]
-        matching = [(d, score) for d, score in scored if score >= MIN_COLOR_MATCH]
-        candidates = [d for d, _ in matching]
-        color_scores = [score for _, score in matching]
 
     if not tracker.is_tracking:
-        target = select_target(candidates, target_class, target_color, color_scores)
+        # Locking on is the one place a hard colour threshold belongs: with no
+        # target yet there is nothing else to say which object was meant.
+        lockable, color_scores = candidates, None
+        if priors is not None:
+            matching = [(d, s) for d, s in zip(candidates, priors) if s >= MIN_COLOR_MATCH]
+            lockable = [d for d, _ in matching]
+            color_scores = [s for _, s in matching]
+
+        target = select_target(lockable, target_class, target_color, color_scores)
         if target is None:
             return FrameOutcome(detections=detections, status=STATUS_SEARCHING)
-        tracker.start(target)
+        tracker.start(target, frame)
 
-    result = tracker.update(candidates)
+    # Every candidate of the right class goes to the tracker, with its colour
+    # score attached as a preference. Re-filtering by colour on each frame
+    # used to hide the target from the tracker whenever its score dipped -- a
+    # highlight, a shadow, a hand across it -- and a few such frames in a row
+    # ended the lock on an object that had not gone anywhere. Passing the
+    # score instead keeps colour telling the target apart from a lookalike,
+    # which is what it was there for, without it ever being able to make the
+    # target disappear.
+    result = tracker.update(candidates, frame, priors)
     if result.lost:
         return FrameOutcome(detections=detections, status=STATUS_LOST)
     return FrameOutcome(
@@ -110,6 +125,7 @@ def process_frame(frame, detector, tracker, target_class: str, target_color: str
         center=result.center,
         dx=result.dx,
         dy=result.dy,
+        coasting=result.coasting,
     )
 
 
@@ -120,7 +136,8 @@ def render(frame, outcome: FrameOutcome, label: str):
     if outcome.bbox is not None:
         draw_target(frame, outcome.bbox, label.upper())
         draw_error_vector(frame, outcome.center)
-        draw_hud(frame, [f"{outcome.status}  err_x={outcome.dx}  err_y={outcome.dy}"])
+        state = "COASTING" if outcome.coasting else outcome.status
+        draw_hud(frame, [f"{state}  err_x={outcome.dx}  err_y={outcome.dy}"])
     else:
         draw_hud(frame, [f"{outcome.status}  {label}"])
     return frame
@@ -153,7 +170,7 @@ def resolve_target(command: str, detector) -> tuple[str, str | None] | None:
     return target_class, target_color
 
 
-def track_until_stopped(cam, detector, ser, target_class, target_color, show_display) -> None:
+def track_until_stopped(cam, detector, ser, target_class, target_color, show_display, verbose=False) -> None:
     """Follow one target until the user stops it or the camera gives out."""
     label = f"{target_color} {target_class}" if target_color else target_class
     print(f"\nTarget: {label}")
@@ -179,7 +196,11 @@ def track_until_stopped(cam, detector, ser, target_class, target_color, show_dis
 
             outcome = process_frame(frame, detector, tracker, target_class, target_color)
 
-            if outcome.status == STATUS_LOCKED:
+            # Printing per frame is not free: at 30 fps a few lines a frame is
+            # enough terminal I/O to cut the frame rate, and a slower loop means
+            # the target moves further between detections -- the tracker's
+            # hardest case. Off unless asked for.
+            if verbose and outcome.status == STATUS_LOCKED:
                 print(f"err_x={outcome.dx}, err_y={outcome.dy}")
 
             if ser is not None:
@@ -191,10 +212,12 @@ def track_until_stopped(cam, detector, ser, target_class, target_color, show_dis
                 for byte in payload:
                     checksum ^= byte
                 packet = b"\xAA\x55" + bytes([4]) + payload + bytes([checksum])
-                print(f"VISION TX: err_x={err_x} err_y={err_y}")
+                if verbose:
+                    print(f"VISION TX: err_x={err_x} err_y={err_y}")
                 try:
                     sent = ser.write(packet)
-                    print(f"SENT {sent} BYTES")
+                    if verbose:
+                        print(f"SENT {sent} BYTES")
                 except Exception as exc:
                     print(f"SERIAL WRITE ERROR: {exc!r}")
                     ser.close()
@@ -246,6 +269,7 @@ def main() -> None:
     parser.add_argument("--confidence", type=float, default=None)
     parser.add_argument("--imgsz", type=int, default=None)
     parser.add_argument("--no-display", action="store_true", help="Run headless, without a preview window")
+    parser.add_argument("--verbose", action="store_true", help="Print the centre error and serial traffic every frame")
     args = parser.parse_args()
 
     overrides = {}
@@ -281,7 +305,7 @@ def main() -> None:
         if args.command is not None:
             target = resolve_target(args.command, detector)
             if target is not None:
-                track_until_stopped(cam, detector, ser, *target, show_display)
+                track_until_stopped(cam, detector, ser, *target, show_display, args.verbose)
             return
 
         print("\nWATCHDOG -- type what to find, or 'quit' to exit.")
@@ -298,7 +322,7 @@ def main() -> None:
 
             target = resolve_target(command, detector)
             if target is not None:
-                track_until_stopped(cam, detector, ser, *target, show_display)
+                track_until_stopped(cam, detector, ser, *target, show_display, args.verbose)
     finally:
         print("Shutting down.")
         cam.release()

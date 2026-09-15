@@ -31,6 +31,9 @@ DEFAULT_MODEL = "yolov8n.pt"
 # person detection (0.94 confidence) on the same feed.
 DEFAULT_IMGSZ = 640
 DEFAULT_CONFIDENCE = 0.25
+# Overlap above which two boxes of the same class are treated as one object.
+DEFAULT_IOU = 0.45
+DEFAULT_MAX_DETECTIONS = 50
 
 Detection = dict
 
@@ -58,10 +61,14 @@ class Detector:
         imgsz: int = DEFAULT_IMGSZ,
         confidence: float = DEFAULT_CONFIDENCE,
         prefer_gpu: bool = True,
+        iou: float = DEFAULT_IOU,
+        max_detections: int = DEFAULT_MAX_DETECTIONS,
     ) -> None:
         self.model = YOLO(model_path)
         self.imgsz = imgsz
         self.confidence = confidence
+        self.iou = iou
+        self.max_detections = max_detections
         self.device = _select_device(prefer_gpu)
         if self.device != "cpu" and not self._device_works():
             print(f"Device '{self.device}' failed a warm-up run; falling back to CPU.")
@@ -85,15 +92,32 @@ class Detector:
         return self.model.names
 
     def supports_class(self, class_name: str) -> bool:
-        return class_name.lower() in {n.lower() for n in self.model.names.values()}
+        return self.class_id(class_name) is not None
+
+    def class_id(self, class_name: str) -> int | None:
+        """The model's id for `class_name`, or None if it does not know it."""
+        wanted = class_name.strip().lower()
+        for class_id, name in self.model.names.items():
+            if name.strip().lower() == wanted:
+                return int(class_id)
+        return None
 
     def detect(self, frame: np.ndarray, target_class: str | None = None) -> list[Detection]:
         """Detect objects in `frame`, optionally keeping only one class."""
+        # Narrowing the model to the requested class is not the same as
+        # dropping the other classes afterwards: it also keeps a confident
+        # overlapping box of another class from suppressing the one we want,
+        # which is how a phone held in a hand or a bottle held against a
+        # body goes missing.
+        wanted_id = self.class_id(target_class) if target_class else None
         try:
             results = self.model.predict(
                 frame,
                 imgsz=self.imgsz,
                 conf=self.confidence,
+                iou=self.iou,
+                max_det=self.max_detections,
+                classes=None if wanted_id is None else [wanted_id],
                 device=self.device,
                 verbose=False,
             )

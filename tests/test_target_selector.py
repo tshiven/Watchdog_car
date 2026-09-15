@@ -1,12 +1,3 @@
-"""
-Tests for vision/target_selector.py.
-
-Placeholder for future tests covering ranking and selection of the best
-matching target among multiple candidates.
-
-Not yet implemented.
-"""
-
 """Tests for vision/target_selector.py."""
 
 from vision.target_selector import select_target
@@ -139,3 +130,43 @@ def test_color_scores_must_match_detection_count():
         pass
     else:
         raise AssertionError("Expected ValueError for mismatched color scores")
+
+def test_mid_confidence_small_object_can_be_locked_onto():
+    # yolov8n scores a person ~0.94 but a bottle ~0.42 and a phone ~0.38. The
+    # floor used to be 0.50, so those two were drawn on screen every frame and
+    # could never be selected -- the system searched for what it was showing.
+    for class_name, confidence in [("bottle", 0.42), ("cell phone", 0.38)]:
+        detections = [make_detection(class_name, confidence, 1000)]
+
+        assert select_target(detections, class_name) is not None
+
+
+def test_confidence_below_the_detectors_own_floor_is_still_rejected():
+    assert select_target([make_detection("cat", 0.2, 1000)], "cat") is None
+
+
+def test_class_matching_is_case_insensitive():
+    # Class names come from the model's table; a typed request should not have
+    # to match their casing.
+    detections = [make_detection("Cell Phone", 0.8, 1000)]
+
+    assert select_target(detections, "cell phone") is detections[0]
+
+
+def test_color_outranks_confidence_and_size():
+    # Colour is the only cue that tells one instance of a class from another.
+    dull_but_certain = make_detection("cat", 0.95, 4000)
+    right_color = make_detection("cat", 0.45, 1000)
+
+    result = select_target(
+        [dull_but_certain, right_color],
+        "cat",
+        requested_color="orange",
+        color_scores=[0.0, 0.9],
+    )
+
+    assert result is right_color
+
+
+def test_zero_area_detections_do_not_crash_selection():
+    assert select_target([make_detection("cat", 0.8, 0)], "cat") is not None

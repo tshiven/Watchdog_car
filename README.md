@@ -32,12 +32,9 @@ Longer-term, natural-language commands such as "Find the orange cat" or
 
 ## Current Status
 
-This project is in the initial scaffolding stage. The folder/module
-structure exists, but detection, color matching, tracking, serial
-communication, and firmware are **not yet implemented**. Nothing in this
-repository should be assumed to run end-to-end yet.
-
-This project's detection, color matching, and tracking are fully implemented. The serial communication is almost entirely set-up. Currently, we are working on the hardware side and waiting on some parts before we can upload a demo.
+Detection, color matching, target selection and tracking are implemented and
+run end-to-end. The serial link is almost entirely set up. Work is currently
+on the hardware side, waiting on parts before a demo can go up.
 
 ## System Architecture
 
@@ -84,8 +81,40 @@ User input (CLI) -> command parsing -> YOLO detection -> attribute matching
 
 ## Validation Metrics
 
-To be defined as each stage is implemented (e.g. detection accuracy,
-tracking stability, center-error latency). Not yet available.
+Vision behaviour is measured on simulated runs (a moving target, a detector
+that drops frames and jitters its boxes, and a second object of the same
+class nearby), scored as the share of frames holding a lock on the correct
+object. Mean of 8 runs x 300 frames:
+
+| Scenario                          | Correct lock |
+|-----------------------------------|--------------|
+| bottle, slow, no color requested   | 99.9%        |
+| bottle, fast, no color requested   | 98.5%        |
+| bottle, slow, color requested      | 95.5%        |
+| bottle, fast, color requested      | 94.7%        |
+| bottle, slow, 40% detector dropout | 88.2%        |
+| bottle, fast, 40% detector dropout | 78.7%        |
+| person, slow                       | 100.0%       |
+| person, fast                       | 99.6%        |
+
+"Fast" is 140 px per frame, roughly a hand-carried object at 12 fps on a
+1280x720 feed.
+
+Three things had made small objects track far worse than people:
+
+- The tracker's search gate was a multiple of the target's *own* size, so a
+  500 px person was allowed 500 px of movement per frame and a 110 px bottle
+  only 110 px. Identical motion was followed for one and dropped for the
+  other. The gate now has a floor tied to the frame, follows the target's
+  predicted position, and opens along its velocity while it is missing.
+- Color matching required a pixel to clear a saturation floor of 100 while
+  counting it as a candidate from 50, so ordinary indoor colors scored a flat
+  0.00 and a color request could never be satisfied. Pixels are now
+  classified into whichever color explains them best, which also closes the
+  gaps and overlaps the old ranges left.
+- Selection refused to lock below 0.50 confidence while the detector emitted
+  from 0.25, and small objects land in between -- so a bottle at 0.42 was
+  drawn on screen every frame and never locked onto.
 
 ## Demo
 
