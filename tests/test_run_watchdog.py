@@ -1,13 +1,22 @@
 """Tests for scripts/run_watchdog.py, driving the pipeline with a fake detector."""
 
+import struct
+
 import numpy as np
 
+from communication.packet_utils import (
+    TARGET_NAME_FRAME_SIZE,
+    TARGET_NAME_LENGTH_BYTE,
+    encode_target_name_packet,
+)
 from scripts.run_watchdog import (
     STATUS_LOCKED,
     STATUS_LOST,
     STATUS_SEARCHING,
+    TargetNameSender,
     crop_to_bbox,
     process_frame,
+    track_until_stopped,
 )
 from vision.tracker import Tracker
 
@@ -228,3 +237,151 @@ def test_coasting_is_reported_on_the_outcome():
 
     assert outcome.status == STATUS_LOCKED
     assert outcome.coasting
+
+
+# --- Target-name transmission -------------------------------------------
+
+
+class FakeSerial:
+    """Stands in for pyserial's Serial: records writes, never has input."""
+
+    def __init__(self, fail_on_write: bool = False) -> None:
+        self.written = b""
+        self.closed = False
+        self.in_waiting = 0
+        self._fail_on_write = fail_on_write
+
+    def write(self, data: bytes) -> int:
+        if self._fail_on_write:
+            raise OSError("port went away")
+        self.written += data
+        return len(data)
+
+    def readline(self) -> bytes:
+        return b""
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class FakeCamera:
+    """Yields canned frames, then stops the loop the way Ctrl+C would."""
+
+    def __init__(self, frames: int) -> None:
+        self.width = FRAME_WIDTH
+        self.height = FRAME_HEIGHT
+        self._remaining = frames
+
+    def read(self):
+        if self._remaining <= 0:
+            raise KeyboardInterrupt
+        self._remaining -= 1
+        return _blank_frame()
+
+
+def _name_packets(written: bytes) -> list[bytes]:
+    """Every target-name frame in a recorded write stream."""
+    packets, index = [], 0
+    while index < len(written):
+        length = written[index + 2]
+        frame = written[index : index + 4 + length]
+        if length == TARGET_NAME_LENGTH_BYTE:
+            packets.append(frame)
+        index += len(frame)
+    return packets
+
+
+def test_target_name_is_sent_once_when_tracking_starts():
+    fake = FakeSerial()
+    sender = TargetNameSender()
+
+    sender.send(fake, "orange cat")
+
+    assert fake.written == encode_target_name_packet("ORANGE CAT")
+
+
+def test_target_name_is_not_resent_while_the_target_is_unchanged():
+    fake = FakeSerial()
+    sender = TargetNameSender()
+
+    assert sender.send(fake, "orange cat") is True
+    assert sender.send(fake, "orange cat") is False
+    assert sender.send(fake, "  ORANGE   cat ") is False  # same after normalising
+
+    assert len(fake.written) == TARGET_NAME_FRAME_SIZE
+
+
+def test_target_name_is_resent_when_the_target_changes():
+    fake = FakeSerial()
+    sender = TargetNameSender()
+
+    sender.send(fake, "orange cat")
+    sender.send(fake, "red bottle")
+
+    assert _name_packets(fake.written) == [
+        encode_target_name_packet("ORANGE CAT"),
+        encode_target_name_packet("RED BOTTLE"),
+    ]
+
+
+def test_target_name_is_resent_after_a_reconnect():
+    sender = TargetNameSender()
+    first = FakeSerial()
+    sender.send(first, "orange cat")
+
+    sender.forget()  # what a dropped link does
+    reconnected = FakeSerial()
+    sender.send(reconnected, "orange cat")
+
+    assert reconnected.written == encode_target_name_packet("ORANGE CAT")
+
+
+def test_target_name_send_without_a_serial_link_is_a_no_op():
+    assert TargetNameSender().send(None, "orange cat") is False
+
+
+def test_a_failed_name_write_is_survived_and_retried_later():
+    sender = TargetNameSender()
+
+    assert sender.send(FakeSerial(fail_on_write=True), "orange cat") is False
+
+    working = FakeSerial()
+    assert sender.send(working, "orange cat") is True
+    assert working.written == encode_target_name_packet("ORANGE CAT")
+
+
+def test_tracking_packets_are_unchanged_and_follow_the_name_packet():
+    detection = _detection((100, 100, 200, 200))
+    detector = FakeDetector([detection], [detection])
+    fake = FakeSerial()
+
+    track_until_stopped(
+        FakeCamera(frames=2),
+        detector,
+        fake,
+        "cat",
+        None,
+        show_display=False,
+        name_sender=TargetNameSender(),
+    )
+
+    name_packet = encode_target_name_packet("CAT")
+    assert fake.written.startswith(name_packet)
+
+    # Exactly one name frame, whatever the frame count.
+    assert len(_name_packets(fake.written)) == 1
+
+    # Everything after it is the untouched 9-byte tracking frame.
+    tracking = fake.written[len(name_packet) :]
+    assert len(tracking) == 2 * 9
+    for offset in (0, 9):
+        frame = tracking[offset : offset + 9]
+        assert frame[:3] == b"\xaa\x55\x05"
+        err_x, err_y, status = struct.unpack("<hhB", frame[3:8])
+        checksum = 0x05
+        for byte in frame[3:8]:
+            checksum ^= byte
+        assert frame[8] == checksum
+        # The box centres at (150, 150) in a 640x480 frame.
+        assert (err_x, err_y) == (150 - FRAME_WIDTH // 2, 150 - FRAME_HEIGHT // 2)
+        assert status in (0x00, 0x01)  # two frames is far short of a lock

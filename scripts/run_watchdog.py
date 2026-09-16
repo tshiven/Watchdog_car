@@ -28,6 +28,7 @@ from dataclasses import dataclass
 import cv2
 import serial
 
+from communication.packet_utils import encode_target_name_packet, normalize_target_name
 from interface.command_parser import parse_command
 from vision.camera import Camera, CameraError
 from vision.color_matcher import HSV_RANGES, color_match_score
@@ -75,6 +76,44 @@ class FrameOutcome:
     dy: int | None = None
     # True while the target's position is predicted rather than detected.
     coasting: bool = False
+
+
+class TargetNameSender:
+    """
+    Sends the LCD target name -- on connection and on change, never per frame.
+
+    The name is metadata: the STM32 latches it and prints it, so re-sending
+    it every frame would spend bandwidth the tracking stream needs without
+    telling the firmware anything new. Remembering the last name sent is
+    what keeps it to one write per target.
+    """
+
+    def __init__(self) -> None:
+        self._last_sent: str | None = None
+
+    def forget(self) -> None:
+        """Drop the memory of what was sent, so the next send goes out again."""
+        self._last_sent = None
+
+    def send(self, ser, name: str) -> bool:
+        """Send `name` unless it is already on the display. True if written."""
+        if ser is None:
+            return False
+
+        display = normalize_target_name(name)
+        if display == self._last_sent:
+            return False
+
+        try:
+            ser.write(encode_target_name_packet(display))
+        except Exception as exc:
+            print(f"SERIAL WRITE ERROR (target name): {exc!r}")
+            self.forget()
+            return False
+
+        self._last_sent = display
+        print(f"TX target name: {display}")
+        return True
 
 
 def crop_to_bbox(frame, bbox: tuple[int, int, int, int]):
@@ -176,11 +215,17 @@ def resolve_target(command: str, detector) -> tuple[str, str | None] | None:
     return target_class, target_color
 
 
-def track_until_stopped(cam, detector, ser, target_class, target_color, show_display, verbose=False) -> None:
+def track_until_stopped(
+    cam, detector, ser, target_class, target_color, show_display, verbose=False, name_sender=None
+) -> None:
     """Follow one target until the user stops it or the camera gives out."""
     label = f"{target_color} {target_class}" if target_color else target_class
     print(f"\nTarget: {label}")
     print("Press 'q' in the window to stop." if show_display else "Press Ctrl+C to stop.")
+
+    # One write per target, here rather than in the loop below.
+    if name_sender is not None:
+        name_sender.send(ser, label)
 
     tracker = Tracker(frame_width=cam.width, frame_height=cam.height)
     last_status = None
@@ -250,6 +295,10 @@ def track_until_stopped(cam, detector, ser, target_class, target_color, show_dis
                     print(f"SERIAL WRITE ERROR: {exc!r}")
                     ser.close()
                     ser = None
+                    # The LCD's name went down with the link; whatever opens
+                    # the port next has to send it again.
+                    if name_sender is not None:
+                        name_sender.forget()
 
                 if ser is not None and ser.in_waiting > 0:
                     try:
@@ -323,6 +372,7 @@ def main() -> None:
             print(f"SERIAL OPEN ERROR: {exc!r}")
             print("Continuing without the serial link.")
 
+    name_sender = TargetNameSender()
     show_display = not args.no_display
     print(
         f"Model on {detector.device}, camera {cam.width}x{cam.height}, "
@@ -333,7 +383,9 @@ def main() -> None:
         if args.command is not None:
             target = resolve_target(args.command, detector)
             if target is not None:
-                track_until_stopped(cam, detector, ser, *target, show_display, args.verbose)
+                track_until_stopped(
+                    cam, detector, ser, *target, show_display, args.verbose, name_sender
+                )
             return
 
         print("\nWATCHDOG -- type what to find, or 'quit' to exit.")
@@ -350,7 +402,9 @@ def main() -> None:
 
             target = resolve_target(command, detector)
             if target is not None:
-                track_until_stopped(cam, detector, ser, *target, show_display, args.verbose)
+                track_until_stopped(
+                    cam, detector, ser, *target, show_display, args.verbose, name_sender
+                )
     finally:
         print("Shutting down.")
         cam.release()
