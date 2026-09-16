@@ -55,6 +55,12 @@ STATUS_LOCKED = "LOCKED"
 STATUS_LOST = "LOST"
 SERIAL_PORT = "COM3"
 SERIAL_BAUDRATE = 115200
+# Frames of unbroken detection before the status byte claims a confident lock.
+# One detected frame is enough to say "something is there"; a lock is a promise
+# the STM32 acts on, so it has to survive a run of frames first.
+LOCK_CONSECUTIVE_FRAMES = 12
+# Cadence of the status debug line, in processed frames.
+STATUS_DEBUG_EVERY = 12
 
 
 @dataclass
@@ -179,6 +185,8 @@ def track_until_stopped(cam, detector, ser, target_class, target_color, show_dis
     tracker = Tracker(frame_width=cam.width, frame_height=cam.height)
     last_status = None
     dropped_frames = 0
+    consecutive_detections = 0
+    processed_frames = 0
     serial_rx_buffer = b""
     serial_response_received = False
     serial_warning_printed = False
@@ -195,6 +203,23 @@ def track_until_stopped(cam, detector, ser, target_class, target_color, show_dis
             dropped_frames = 0
 
             outcome = process_frame(frame, detector, tracker, target_class, target_color)
+            processed_frames += 1
+
+            # What the status byte reports is what the detector confirmed on
+            # *this* frame, so a coasting outcome counts as a miss: the lock is
+            # still held, but the position is carried forward on velocity and
+            # nothing was actually seen. Taking status == LOCKED alone would let
+            # dead-reckoned frames build a "confident lock" out of stale data.
+            detected = outcome.status == STATUS_LOCKED and not outcome.coasting
+            consecutive_detections = consecutive_detections + 1 if detected else 0
+            locked = consecutive_detections >= LOCK_CONSECUTIVE_FRAMES
+            status = (0x01 if detected else 0x00) | (0x02 if locked else 0x00)
+
+            if processed_frames % STATUS_DEBUG_EVERY == 0:
+                print(
+                    f"detected={detected} consecutive={consecutive_detections} "
+                    f"locked={locked} status=0x{status:02X}"
+                )
 
             # Printing per frame is not free: at 30 fps a few lines a frame is
             # enough terminal I/O to cut the frame rate, and a slower loop means
@@ -204,16 +229,19 @@ def track_until_stopped(cam, detector, ser, target_class, target_color, show_dis
                 print(f"err_x={outcome.dx}, err_y={outcome.dy}")
 
             if ser is not None:
-                locked = outcome.status == STATUS_LOCKED
-                err_x = max(-32768, min(32767, int(outcome.dx if locked else 0)))
-                err_y = max(-32768, min(32767, int(outcome.dy if locked else 0)))
-                payload = struct.pack("<hh", err_x, err_y)
-                checksum = 4
+                has_fix = outcome.status == STATUS_LOCKED
+                err_x = max(-32768, min(32767, int(outcome.dx if has_fix else 0)))
+                err_y = max(-32768, min(32767, int(outcome.dy if has_fix else 0)))
+                payload = struct.pack("<hhB", err_x, err_y, status)
+                # Length is taken from the payload rather than written out, so
+                # the two can never disagree on the wire.
+                length = len(payload)
+                checksum = length
                 for byte in payload:
                     checksum ^= byte
-                packet = b"\xAA\x55" + bytes([4]) + payload + bytes([checksum])
+                packet = b"\xAA\x55" + bytes([length]) + payload + bytes([checksum])
                 if verbose:
-                    print(f"VISION TX: err_x={err_x} err_y={err_y}")
+                    print(f"VISION TX: err_x={err_x} err_y={err_y} status=0x{status:02X}")
                 try:
                     sent = ser.write(packet)
                     if verbose:
