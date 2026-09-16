@@ -104,15 +104,18 @@ class TargetNameSender:
         if display == self._last_sent:
             return False
 
+        packet = encode_target_name_packet(display)
         try:
-            ser.write(encode_target_name_packet(display))
+            ser.write(packet)
         except Exception as exc:
             print(f"SERIAL WRITE ERROR (target name): {exc!r}")
             self.forget()
             return False
 
         self._last_sent = display
-        print(f"TX target name: {display}")
+        # Logged from the packet, so a name the display had to cut is
+        # reported as what actually went out rather than what was asked for.
+        print(f"TX target name: {packet[3:-1].decode('ascii')}")
         return True
 
 

@@ -5,8 +5,8 @@ import struct
 import numpy as np
 
 from communication.packet_utils import (
-    TARGET_NAME_FRAME_SIZE,
-    TARGET_NAME_LENGTH_BYTE,
+    SYNC_BYTES,
+    TARGET_NAME_SYNC_BYTES,
     encode_target_name_packet,
 )
 from scripts.run_watchdog import (
@@ -280,12 +280,18 @@ class FakeCamera:
 
 
 def _name_packets(written: bytes) -> list[bytes]:
-    """Every target-name frame in a recorded write stream."""
+    """
+    Every target-name frame in a recorded write stream.
+
+    Both message types are <2-byte header><LEN><payload><checksum>, so one
+    walk covers the stream; the header says which is which.
+    """
     packets, index = [], 0
     while index < len(written):
-        length = written[index + 2]
-        frame = written[index : index + 4 + length]
-        if length == TARGET_NAME_LENGTH_BYTE:
+        header = written[index : index + 2]
+        assert header in (SYNC_BYTES, TARGET_NAME_SYNC_BYTES), "unknown frame header"
+        frame = written[index : index + 4 + written[index + 2]]
+        if header == TARGET_NAME_SYNC_BYTES:
             packets.append(frame)
         index += len(frame)
     return packets
@@ -308,7 +314,7 @@ def test_target_name_is_not_resent_while_the_target_is_unchanged():
     assert sender.send(fake, "orange cat") is False
     assert sender.send(fake, "  ORANGE   cat ") is False  # same after normalising
 
-    assert len(fake.written) == TARGET_NAME_FRAME_SIZE
+    assert len(fake.written) == len(encode_target_name_packet("ORANGE CAT"))
 
 
 def test_target_name_is_resent_when_the_target_changes():
@@ -367,6 +373,8 @@ def test_tracking_packets_are_unchanged_and_follow_the_name_packet():
 
     name_packet = encode_target_name_packet("CAT")
     assert fake.written.startswith(name_packet)
+    assert fake.written[:2] == TARGET_NAME_SYNC_BYTES
+    assert name_packet == b"\xa5\x5a\x03CAT" + bytes([0x03 ^ 0x43 ^ 0x41 ^ 0x54])
 
     # Exactly one name frame, whatever the frame count.
     assert len(_name_packets(fake.written)) == 1

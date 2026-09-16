@@ -109,23 +109,22 @@ def find_packet(buffer: bytes) -> tuple[Packet | None, bytes]:
 # --- Target-name packet -------------------------------------------------
 #
 # A separate, low-rate message that tells the STM32 what to print on the
-# first line of its 16x2 LCD. It shares the sync prefix and XOR checksum of
-# the center-error frame but carries a fixed 16-byte ASCII payload:
+# first line of its 16x2 LCD. It has its own header and a variable-length
+# ASCII payload:
 #
-#     byte 0      0xAA             sync
-#     byte 1      0x55             sync
-#     byte 2      0x10             payload length, always 16
-#     bytes 3-18  name, ASCII      space-padded to exactly 16 characters
-#     byte 19     checksum, uint8  XOR of byte 2 and bytes 3-18
+#     byte 0       0xA5             sync
+#     byte 1       0x5A             sync
+#     byte 2       LEN              payload length, 0..16
+#     bytes 3..    name, ASCII      exactly LEN bytes, unpadded
+#     last byte    checksum, uint8  XOR of LEN and every payload byte
 #
-# The length byte is what the firmware dispatches on, and a fixed 0x10 can
-# never be mistaken for a tracking frame's 0x05 -- which a variable-length
-# name could be, for any name that happened to be five characters long.
+# The header is what tells the two message types apart -- 0xA5 0x5A here
+# against 0xAA 0x55 for the center-error frame -- so the length byte is free
+# to be the real name length. No padding and no terminator: the firmware
+# reads exactly LEN bytes.
 
+TARGET_NAME_SYNC_BYTES = b"\xa5\x5a"
 TARGET_NAME_MAX_CHARS = 16
-TARGET_NAME_LENGTH_BYTE = TARGET_NAME_MAX_CHARS
-TARGET_NAME_PAD = b" "
-TARGET_NAME_FRAME_SIZE = len(SYNC_BYTES) + 1 + TARGET_NAME_MAX_CHARS + CHECKSUM_SIZE
 
 # Anything outside printable ASCII becomes this: the LCD's character ROM has
 # no glyph for it, and a replacement is easier to read than a stray byte.
@@ -153,18 +152,21 @@ def encode_target_name_packet(name: str) -> bytes:
     """
     Build the on-wire bytes for one target-name message.
 
-    Accepts any string: it is forced to ASCII, cut to the 16 characters the
-    display holds, and padded back out to 16, so the frame is always
-    TARGET_NAME_FRAME_SIZE bytes whatever comes in.
+    Accepts any string: it is normalised for the display, forced to ASCII and
+    cut to the 16 characters the LCD holds. The frame carries the resulting
+    length, so it is 4 + LEN bytes rather than a fixed size.
     """
     payload = (
-        str(name)
+        normalize_target_name(name)
         .encode("ascii", errors="replace")[:TARGET_NAME_MAX_CHARS]
-        .ljust(TARGET_NAME_MAX_CHARS, TARGET_NAME_PAD)
+        # Only a truncation can leave a trailing space, and a space the
+        # display would not show is a byte the firmware need not read.
+        .rstrip(b" ")
     )
+    length = len(payload)
     return (
-        SYNC_BYTES
-        + bytes([TARGET_NAME_LENGTH_BYTE])
+        TARGET_NAME_SYNC_BYTES
+        + bytes([length])
         + payload
-        + bytes([_checksum(TARGET_NAME_LENGTH_BYTE, payload)])
+        + bytes([_checksum(length, payload)])
     )
