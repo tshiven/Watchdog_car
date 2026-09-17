@@ -16,6 +16,11 @@ Fixed size and sync-prefixed so the firmware can resynchronise mid-stream
 after dropped bytes, and checksummed so corrupted frames are discarded
 rather than steering the servos.
 
+That 4-byte payload is the original form and is kept for the firmware's
+backward compatibility. What the live runner sends is the 6-byte form --
+the same frame plus a status byte and a target-size byte -- built by
+encode_tracking_packet(); see the tracking-packet section below.
+
 A second, low-rate frame carries the target name for the STM32's LCD; see
 the target-name section at the bottom of this file.
 """
@@ -63,6 +68,57 @@ def encode_packet(err_x: int, err_y: int) -> bytes:
     err_y = _clamp_int16(err_y)
     payload = struct.pack("<hh", err_x, err_y)
     return SYNC_BYTES + bytes([LENGTH_BYTE]) + payload + bytes([_checksum(LENGTH_BYTE, payload)])
+
+
+# --- Tracking packet with status and target size (LEN = 6) ------------------
+#
+# What a current vision build sends, and what the firmware's autonomous
+# follower needs. Same framing and same checksum rule as the 4-byte frame
+# above, with two more payload bytes:
+#
+#     byte 0-1   0xAA 0x55        sync
+#     byte 2     0x06             payload length
+#     bytes 3-4  err_x, int16 LE  horizontal centre error, pixels
+#     bytes 5-6  err_y, int16 LE  vertical centre error, pixels
+#     byte 7     status, uint8    bit 0 = detected, bit 1 = locked
+#     byte 8     size_pct, uint8  100 * bbox height / frame height, 0..100
+#     byte 9     checksum, uint8  XOR of byte 2 and bytes 3-8
+#
+# The firmware accepts LEN 4, 5 and 6, so an older vision build still steers
+# the camera. It treats size_pct == 0 as "no distance information" and
+# refuses autonomous forward motion on it, which is what makes the shorter
+# frames safe rather than merely tolerated -- so 0 is the correct value to
+# send whenever there is no locked box, and it must never be a stale one.
+
+TRACKING_PAYLOAD_FORMAT = "<hhBB"  # err_x, err_y, status, size_pct
+
+# Bits of the status byte, matching VISION_STATUS_* in the firmware.
+STATUS_DETECTED = 0x01
+STATUS_LOCKED = 0x02
+
+# The firmware clamps to this as well; doing it here too means the wire never
+# carries a value the two sides would read differently.
+TARGET_SIZE_PCT_MAX = 100
+
+
+def clamp_size_pct(value: int) -> int:
+    """Keep a target size inside the 0..100 the size byte can carry."""
+    return max(0, min(TARGET_SIZE_PCT_MAX, int(value)))
+
+
+def encode_tracking_packet(err_x: int, err_y: int, status: int, size_pct: int) -> bytes:
+    """Build the on-wire bytes for one 6-byte tracking frame."""
+    payload = struct.pack(
+        TRACKING_PAYLOAD_FORMAT,
+        _clamp_int16(err_x),
+        _clamp_int16(err_y),
+        int(status) & 0xFF,
+        clamp_size_pct(size_pct),
+    )
+    # The length byte is taken from the payload rather than written out, so the
+    # two can never disagree on the wire.
+    length = len(payload)
+    return SYNC_BYTES + bytes([length]) + payload + bytes([_checksum(length, payload)])
 
 
 def decode_packet(data: bytes) -> Packet | None:

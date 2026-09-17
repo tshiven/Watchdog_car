@@ -16,6 +16,7 @@ from scripts.run_watchdog import (
     TargetNameSender,
     crop_to_bbox,
     process_frame,
+    size_pct_from_bbox,
     track_until_stopped,
 )
 from vision.tracker import Tracker
@@ -31,6 +32,9 @@ class FakeDetector:
 
     def __init__(self, *frames_of_detections: list[dict]) -> None:
         self._frames = list(frames_of_detections)
+        # The runner reads this off whatever detector it is given, to report
+        # inference time; a fake one has spent no time inferring.
+        self.last_inference_ms = 0.0
 
     def detect(self, frame, target_class=None) -> list[dict]:
         return self._frames.pop(0) if self._frames else []
@@ -379,17 +383,84 @@ def test_tracking_packets_are_unchanged_and_follow_the_name_packet():
     # Exactly one name frame, whatever the frame count.
     assert len(_name_packets(fake.written)) == 1
 
-    # Everything after it is the untouched 9-byte tracking frame.
+    # Everything after it is the 10-byte tracking frame.
     tracking = fake.written[len(name_packet) :]
-    assert len(tracking) == 2 * 9
-    for offset in (0, 9):
-        frame = tracking[offset : offset + 9]
-        assert frame[:3] == b"\xaa\x55\x05"
-        err_x, err_y, status = struct.unpack("<hhB", frame[3:8])
-        checksum = 0x05
-        for byte in frame[3:8]:
+    assert len(tracking) == 2 * 10
+    for offset in (0, 10):
+        frame = tracking[offset : offset + 10]
+        assert frame[:3] == b"\xaa\x55\x06"
+        err_x, err_y, status, size_pct = struct.unpack("<hhBB", frame[3:9])
+        checksum = 0x06
+        for byte in frame[3:9]:
             checksum ^= byte
-        assert frame[8] == checksum
+        assert frame[9] == checksum
         # The box centres at (150, 150) in a 640x480 frame.
         assert (err_x, err_y) == (150 - FRAME_WIDTH // 2, 150 - FRAME_HEIGHT // 2)
         assert status in (0x00, 0x01)  # two frames is far short of a lock
+        # 100 px of box in a 480 px frame.
+        assert size_pct == round(100 * 100 / FRAME_HEIGHT)
+
+
+def test_size_pct_is_the_share_of_frame_height_the_box_fills():
+    assert size_pct_from_bbox((0, 0, 50, 240), 480) == 50
+    assert size_pct_from_bbox((10, 100, 60, 200), 400) == 25
+    # A box taller than the frame, and a box with no height at all.
+    assert size_pct_from_bbox((0, -100, 50, 600), 480) == 100
+    assert size_pct_from_bbox((0, 50, 50, 50), 480) == 0
+
+
+def test_size_pct_is_zero_without_a_box_or_a_frame_height():
+    assert size_pct_from_bbox(None, 480) == 0
+    assert size_pct_from_bbox((0, 0, 50, 240), 0) == 0
+
+
+def test_size_pct_comes_from_the_tracked_target_not_another_detection():
+    """A second, much larger object of the same class must not set the size."""
+    target = _detection((100, 100, 200, 200))          # 100 px tall
+    distractor = _detection((400, 40, 620, 460))       # 420 px tall
+    tracker = _tracker()
+    frame = _blank_frame()
+
+    # Lock onto the smaller box first: it is the only candidate in frame.
+    first = process_frame(frame, FakeDetector([target]), tracker, "cat", None)
+    assert first.status == STATUS_LOCKED
+    assert first.size_pct == round(100 * 100 / FRAME_HEIGHT)
+
+    # Now the big one appears. The lock stays on the original box, and so does
+    # the reported size -- driving on the distractor's size would have the car
+    # believe it had arrived.
+    second = process_frame(
+        frame, FakeDetector([target, distractor]), tracker, "cat", None
+    )
+    assert second.status == STATUS_LOCKED
+    assert second.bbox == target["bbox"]
+    assert second.size_pct == round(100 * 100 / FRAME_HEIGHT)
+
+
+def test_a_lost_target_sends_a_zero_size_so_the_car_cannot_drive_on():
+    """The size byte must not stay latched at the last box the car saw."""
+    detection = _detection((100, 100, 200, 200))
+    # One frame with the target, then enough empty frames to lose the lock.
+    detector = FakeDetector(*([[detection]] + [[]] * 10))
+    fake = FakeSerial()
+
+    track_until_stopped(
+        FakeCamera(frames=11),
+        detector,
+        fake,
+        "cat",
+        None,
+        show_display=False,
+        name_sender=None,
+    )
+
+    frames = [
+        fake.written[i : i + 10] for i in range(0, len(fake.written), 10)
+    ]
+    assert all(frame[:3] == b"\xaa\x55\x06" for frame in frames)
+    sizes = [struct.unpack("<hhBB", frame[3:9])[3] for frame in frames]
+    statuses = [struct.unpack("<hhBB", frame[3:9])[2] for frame in frames]
+
+    assert sizes[0] > 0            # the target was there to begin with
+    assert sizes[-1] == 0          # and its size did not outlive it
+    assert statuses[-1] == 0x00    # neither detected nor locked

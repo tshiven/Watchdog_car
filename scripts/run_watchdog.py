@@ -21,14 +21,20 @@ if __name__ == "__main__":  # Allow running this file directly, not just with -m
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import argparse
-import struct
 import time
 from dataclasses import dataclass
 
 import cv2
 import serial
 
-from communication.packet_utils import encode_target_name_packet, normalize_target_name
+from communication.packet_utils import (
+    STATUS_DETECTED,
+    STATUS_LOCKED,
+    clamp_size_pct,
+    encode_target_name_packet,
+    encode_tracking_packet,
+    normalize_target_name,
+)
 from interface.command_parser import parse_command
 from vision.camera import Camera, CameraError
 from vision.color_matcher import HSV_RANGES, color_match_score
@@ -62,6 +68,10 @@ SERIAL_BAUDRATE = 115200
 LOCK_CONSECUTIVE_FRAMES = 12
 # Cadence of the status debug line, in processed frames.
 STATUS_DEBUG_EVERY = 12
+# Cadence of the timing line, in seconds. Deliberately measured in wall time
+# rather than frames: the whole point of it is to show how slow a frame is, and
+# a frame-counted line goes quiet exactly when the loop is slowest.
+PERF_REPORT_EVERY_S = 2.0
 
 
 @dataclass
@@ -74,6 +84,12 @@ class FrameOutcome:
     center: tuple[int, int] | None = None
     dx: int | None = None
     dy: int | None = None
+    # How much of the frame's height the locked box fills, 0..100. This is the
+    # car's only distance cue, so it is derived from `bbox` -- the box of the
+    # target actually being tracked -- and never from any other detection in
+    # the frame. 0 means "no locked box", which the firmware reads as "no
+    # distance information" and refuses to drive forward on.
+    size_pct: int = 0
     # True while the target's position is predicted rather than detected.
     coasting: bool = False
 
@@ -117,6 +133,26 @@ class TargetNameSender:
         # reported as what actually went out rather than what was asked for.
         print(f"TX target name: {packet[3:-1].decode('ascii')}")
         return True
+
+
+def size_pct_from_bbox(bbox: tuple[int, int, int, int] | None, frame_height: int) -> int:
+    """
+    How much of the frame's height `bbox` fills, as a percentage clamped to
+    0..100 -- the firmware's TARGET_SIZE_PCT, and the only distance cue the
+    car has. A bigger box means a closer target.
+
+    Height rather than area or width because it is the dimension that degrades
+    most gracefully: a person walking towards the camera keeps roughly the same
+    aspect ratio, while a partly cropped or turned target changes width far
+    more than height.
+
+    Returns 0 for no box and for a frame height that cannot be measured, which
+    is the value that tells the firmware it has no distance information at all.
+    """
+    if bbox is None or frame_height <= 0:
+        return 0
+    _, y1, _, y2 = bbox
+    return clamp_size_pct(round(100 * (y2 - y1) / frame_height))
 
 
 def crop_to_bbox(frame, bbox: tuple[int, int, int, int]):
@@ -173,6 +209,9 @@ def process_frame(frame, detector, tracker, target_class: str, target_color: str
         center=result.center,
         dx=result.dx,
         dy=result.dy,
+        # Computed here, from this frame and this frame's tracked box, so the
+        # size can never be paired with a different frame's centre error.
+        size_pct=size_pct_from_bbox(result.bbox, frame.shape[0]),
         coasting=result.coasting,
     )
 
@@ -239,6 +278,12 @@ def track_until_stopped(
     serial_response_received = False
     serial_warning_printed = False
     serial_wait_started = time.monotonic()
+    # Timing window. `perf_frames` counts frames actually processed, so a run
+    # of dropped camera frames shows up as a longer interval rather than
+    # quietly flattering the average.
+    perf_window_started = time.monotonic()
+    perf_frames = 0
+    perf_infer_ms = 0.0
     try:
         while True:
             frame = cam.read()
@@ -252,6 +297,8 @@ def track_until_stopped(
 
             outcome = process_frame(frame, detector, tracker, target_class, target_color)
             processed_frames += 1
+            perf_frames += 1
+            perf_infer_ms += detector.last_inference_ms
 
             # What the status byte reports is what the detector confirmed on
             # *this* frame, so a coasting outcome counts as a miss: the lock is
@@ -261,12 +308,15 @@ def track_until_stopped(
             detected = outcome.status == STATUS_LOCKED and not outcome.coasting
             consecutive_detections = consecutive_detections + 1 if detected else 0
             locked = consecutive_detections >= LOCK_CONSECUTIVE_FRAMES
-            status = (0x01 if detected else 0x00) | (0x02 if locked else 0x00)
+            status = (STATUS_DETECTED if detected else 0x00) | (
+                STATUS_LOCKED if locked else 0x00
+            )
 
             if processed_frames % STATUS_DEBUG_EVERY == 0:
                 print(
                     f"detected={detected} consecutive={consecutive_detections} "
-                    f"locked={locked} status=0x{status:02X}"
+                    f"locked={locked} status=0x{status:02X} "
+                    f"size_pct={outcome.size_pct}"
                 )
 
             # Printing per frame is not free: at 30 fps a few lines a frame is
@@ -278,18 +328,19 @@ def track_until_stopped(
 
             if ser is not None:
                 has_fix = outcome.status == STATUS_LOCKED
-                err_x = max(-32768, min(32767, int(outcome.dx if has_fix else 0)))
-                err_y = max(-32768, min(32767, int(outcome.dy if has_fix else 0)))
-                payload = struct.pack("<hhB", err_x, err_y, status)
-                # Length is taken from the payload rather than written out, so
-                # the two can never disagree on the wire.
-                length = len(payload)
-                checksum = length
-                for byte in payload:
-                    checksum ^= byte
-                packet = b"\xAA\x55" + bytes([length]) + payload + bytes([checksum])
+                err_x = int(outcome.dx if has_fix else 0)
+                err_y = int(outcome.dy if has_fix else 0)
+                # Recomputed from this frame every time and sent on every
+                # frame, so the firmware's copy is replaced rather than left
+                # holding an old one. Without a fix it is 0, which is what
+                # stops the car driving at a target that is no longer there.
+                size_pct = outcome.size_pct if has_fix else 0
+                packet = encode_tracking_packet(err_x, err_y, status, size_pct)
                 if verbose:
-                    print(f"VISION TX: err_x={err_x} err_y={err_y} status=0x{status:02X}")
+                    print(
+                        f"VISION TX: err_x={err_x} err_y={err_y} "
+                        f"status=0x{status:02X} size_pct={size_pct}"
+                    )
                 try:
                     sent = ser.write(packet)
                     if verbose:
@@ -325,6 +376,21 @@ def track_until_stopped(
                 ):
                     print("WARNING: no STM32 response received")
                     serial_warning_printed = True
+
+            # One timing line every couple of seconds -- enough to see what the
+            # loop is really doing, far too rare to slow it down. `interval` is
+            # what the firmware's stale-packet failsafe has to tolerate, so
+            # read it against FAILSAFE_TIMEOUT_MS before changing either.
+            perf_elapsed = time.monotonic() - perf_window_started
+            if perf_elapsed >= PERF_REPORT_EVERY_S and perf_frames > 0:
+                print(
+                    f"PERF infer={perf_infer_ms / perf_frames:.0f}ms "
+                    f"interval={1000 * perf_elapsed / perf_frames:.0f}ms "
+                    f"fps={perf_frames / perf_elapsed:.1f}"
+                )
+                perf_window_started = time.monotonic()
+                perf_frames = 0
+                perf_infer_ms = 0.0
 
             if outcome.status != last_status:
                 _announce(outcome, label)

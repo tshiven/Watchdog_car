@@ -21,15 +21,32 @@ otherwise -- an unavailable GPU should never stop the program from running.
 """
 
 import argparse
+import time
 
 import numpy as np
 from ultralytics import YOLO
 
 DEFAULT_MODEL = "yolov8n.pt"
-# 320/0.50 measured 0/30 detections on a live feed with a person standing in
-# frame -- too coarse and too strict for real use. 640/0.25 measured reliable
-# person detection (0.94 confidence) on the same feed.
-DEFAULT_IMGSZ = 640
+# 320 rather than 640, for the Raspberry Pi 4. The note this replaces recorded
+# "320/0.50 measured 0/30 detections ... 640/0.25 measured reliable person
+# detection": two variables moved at once, and the confidence floor is the one
+# that explains the result. 0.50 is above where yolov8n puts anything but a
+# large, close, unambiguous object -- it is the same floor target_selector.py
+# had to drop to 0.25 for a bottle at 0.42 to be lockable at all. 320 was never
+# measured at the 0.25 this file now defaults to.
+#
+# What it buys: yolov8n on a Pi 4 CPU runs roughly 4x faster at 320 than at
+# 640, which is the difference between a vision update every ~500 ms and every
+# ~150 ms. The firmware's stale-packet failsafe, the pan/tilt rate scaling and
+# the follower all key off that interval, so it is not a detail -- see
+# FAILSAFE_TIMEOUT_MS in the firmware's main.c.
+#
+# What it costs: less detail per object, so small or distant targets are found
+# less reliably. A person -- the case the car is built around -- is large and
+# easy and survives the drop comfortably; a bottle across the room may not.
+# `--imgsz 640` restores the old behaviour exactly, and the PERF line the
+# runner prints is how to tell whether 320 was needed in the first place.
+DEFAULT_IMGSZ = 320
 DEFAULT_CONFIDENCE = 0.25
 # Overlap above which two boxes of the same class are treated as one object.
 DEFAULT_IOU = 0.45
@@ -70,6 +87,11 @@ class Detector:
         self.iou = iou
         self.max_detections = max_detections
         self.device = _select_device(prefer_gpu)
+        # How long the last detect() call spent inside the model, in
+        # milliseconds. Read by the runner's PERF line to separate "inference
+        # is slow" from "everything else is slow", which have different fixes.
+        # 0.0 until the first real inference.
+        self.last_inference_ms = 0.0
         if self.device != "cpu" and not self._device_works():
             print(f"Device '{self.device}' failed a warm-up run; falling back to CPU.")
             self.device = "cpu"
@@ -110,6 +132,7 @@ class Detector:
         # which is how a phone held in a hand or a bottle held against a
         # body goes missing.
         wanted_id = self.class_id(target_class) if target_class else None
+        started = time.perf_counter()
         try:
             results = self.model.predict(
                 frame,
@@ -124,10 +147,13 @@ class Detector:
         except Exception as exc:
             if self.device == "cpu":
                 print(f"Inference failed: {exc}")
+                self.last_inference_ms = 0.0
                 return []
             print(f"Inference failed on '{self.device}' ({exc}); switching to CPU.")
             self.device = "cpu"
+            # The retry sets the timing itself, so it is not overwritten here.
             return self.detect(frame, target_class)
+        self.last_inference_ms = 1000.0 * (time.perf_counter() - started)
 
         wanted = target_class.lower() if target_class else None
         detections: list[Detection] = []
