@@ -23,8 +23,11 @@ gray one.
 from typing import Any
 
 # Matches vision.detector.DEFAULT_CONFIDENCE: anything the detector is
-# willing to report is a candidate worth ranking.
-MIN_CONFIDENCE = 0.10
+# willing to report is a candidate worth ranking. It has to track that value
+# down as well as up -- a floor above the detector's own silently discards
+# the weakest detections the detector was lowered to let through, so the
+# lower floor would have no effect on what the car can actually lock onto.
+MIN_CONFIDENCE = 0.08
 
 DETECTION_WEIGHT = 0.35
 COLOR_WEIGHT = 0.45

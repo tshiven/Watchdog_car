@@ -22,14 +22,20 @@ if __name__ == "__main__":  # Allow running this file directly, not just with -m
 
 import argparse
 import time
+import traceback
 from dataclasses import dataclass
 
 import cv2
 import serial
 
 from communication.packet_utils import (
-    STATUS_DETECTED,
-    STATUS_LOCKED,
+    # Aliased because this file also has string pipeline states below, one of
+    # which is literally named STATUS_LOCKED. Imported under their own names
+    # the string shadowed the 0x02 bit, and building the status byte then ran
+    # `"LOCKED" | 0x00` -- a TypeError on the first locked frame. These two are
+    # the wire bits; STATUS_SEARCHING/LOCKED/LOST below are pipeline states.
+    STATUS_DETECTED as STATUS_BIT_DETECTED,
+    STATUS_LOCKED as STATUS_BIT_LOCKED,
     clamp_size_pct,
     encode_target_name_packet,
     encode_tracking_packet,
@@ -297,7 +303,18 @@ def track_until_stopped(
                 continue
             dropped_frames = 0
 
-            outcome = process_frame(frame, detector, tracker, target_class, target_color)
+            # The whole detect -> select -> track path for one frame. Wrapped
+            # because a crash in here is otherwise a bare traceback at the
+            # bottom of a fast-scrolling log: this prints the exact file and
+            # line, then stops the loop so the car is not left driving on the
+            # last packet it managed to send. The STM32's own stale-packet
+            # failsafe stops the wheels within FAILSAFE_TIMEOUT_MS either way.
+            try:
+                outcome = process_frame(frame, detector, tracker, target_class, target_color)
+            except Exception:
+                print("FRAME PROCESSING FAILED -- exact location below:")
+                traceback.print_exc()
+                break
             processed_frames += 1
             perf_frames += 1
             perf_infer_ms += detector.last_inference_ms
@@ -315,8 +332,8 @@ def track_until_stopped(
             # consecutive_detections above, which clears both immediately --
             # no coasting/stale frame ever counts as fresh.
             locked = consecutive_detections >= LOCK_FRAMES
-            status = (STATUS_DETECTED if detected else 0x00) | (
-                STATUS_LOCKED if locked else 0x00
+            status = (STATUS_BIT_DETECTED if detected else 0x00) | (
+                STATUS_BIT_LOCKED if locked else 0x00
             )
 
             if processed_frames % STATUS_DEBUG_EVERY == 0:

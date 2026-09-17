@@ -47,11 +47,15 @@ DEFAULT_MODEL = "yolov8n.pt"
 # `--imgsz 640` restores the old behaviour exactly, and the PERF line the
 # runner prints is how to tell whether 320 was needed in the first place.
 DEFAULT_IMGSZ = 320
-# Dropped from 0.25 to 0.10: on the Pi 4's ~1 FPS loop, waiting for a
+# Dropped from 0.25 to 0.08: on the Pi 4's ~1 FPS loop, waiting for a
 # confident detection costs whole seconds of not tracking. A weak detection
 # now still locks (see LOCKED in run_watchdog.py), so a lower floor trades
-# some false positives for a car that actually follows its target.
-DEFAULT_CONFIDENCE = 0.10
+# some false positives for a car that actually follows its target. At one
+# frame per second a missed detection is a whole second of standing still,
+# which is the worse trade. Do not go below 0.05 -- past that the box jitters
+# between unrelated objects and the follower chases noise.
+# --confidence overrides this per run.
+DEFAULT_CONFIDENCE = 0.08
 # Overlap above which two boxes of the same class are treated as one object.
 DEFAULT_IOU = 0.45
 DEFAULT_MAX_DETECTIONS = 50
