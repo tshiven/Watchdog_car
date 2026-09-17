@@ -63,8 +63,11 @@ STATUS_LOST = "LOST"
 SERIAL_PORT = "COM3"
 SERIAL_BAUDRATE = 115200
 # At the Pi 4's ~1 FPS, waiting for a run of consecutive detections before
-# claiming a lock costs whole seconds of the car not moving. One fresh
-# (non-coasting) detection is now enough to assert LOCKED immediately.
+# moving costs whole seconds of the car standing still, so DETECTED -- which
+# is what authorises the drivetrain -- asserts on the first fresh
+# (non-coasting) detection. LOCKED is the confirmation on top of that and
+# takes this many consecutive fresh detections, i.e. roughly one more frame.
+LOCK_FRAMES = 2
 # Cadence of the status debug line, in processed frames.
 STATUS_DEBUG_EVERY = 12
 # Cadence of the timing line, in seconds. Deliberately measured in wall time
@@ -306,10 +309,12 @@ def track_until_stopped(
             # dead-reckoned frames build a "confident lock" out of stale data.
             detected = outcome.status == STATUS_LOCKED and not outcome.coasting
             consecutive_detections = consecutive_detections + 1 if detected else 0
-            # One fresh detection is enough: DETECTED and LOCKED assert
-            # together, and a frame without one clears both immediately (no
-            # coasting/stale frame ever counts as fresh).
-            locked = detected
+            # DETECTED asserts on the first fresh detection (blue LED, and the
+            # firmware's authority to move); LOCKED follows one fresh frame
+            # later (green LED). A frame without a fresh detection zeroes
+            # consecutive_detections above, which clears both immediately --
+            # no coasting/stale frame ever counts as fresh.
+            locked = consecutive_detections >= LOCK_FRAMES
             status = (STATUS_DETECTED if detected else 0x00) | (
                 STATUS_LOCKED if locked else 0x00
             )
