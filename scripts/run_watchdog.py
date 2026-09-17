@@ -66,7 +66,12 @@ MIN_COLOR_MATCH = 0.15
 STATUS_SEARCHING = "SEARCHING"
 STATUS_LOCKED = "LOCKED"
 STATUS_LOST = "LOST"
-SERIAL_PORT = "COM3"
+# The STM32 enumerates as a USB CDC / ST-Link VCP device on the Pi, which is
+# /dev/ttyACM0. This used to default to the Windows name "COM3", which can
+# never open on Linux -- and a failed open was only a printed warning, so the
+# run continued with ser = None and transmitted nothing while vision went on
+# reporting detected/locked/status perfectly. Override with --port.
+SERIAL_PORT = "/dev/ttyACM0"
 SERIAL_BAUDRATE = 115200
 # At the Pi 4's ~1 FPS, waiting for a run of consecutive detections before
 # moving costs whole seconds of the car standing still, so DETECTED -- which
@@ -337,10 +342,11 @@ def track_until_stopped(
             )
 
             if processed_frames % STATUS_DEBUG_EVERY == 0:
+                link = "" if ser is not None else "  [NO SERIAL LINK -- 0 bytes sent]"
                 print(
                     f"detected={detected} consecutive={consecutive_detections} "
                     f"locked={locked} status=0x{status:02X} "
-                    f"size_pct={outcome.size_pct}"
+                    f"size_pct={outcome.size_pct}{link}"
                 )
 
             # Printing per frame is not free: at 30 fps a few lines a frame is
@@ -363,7 +369,8 @@ def track_until_stopped(
                 if verbose:
                     print(
                         f"VISION TX: err_x={err_x} err_y={err_y} "
-                        f"status=0x{status:02X} size_pct={size_pct}"
+                        f"status=0x{status:02X} size_pct={size_pct} "
+                        f"bytes={packet.hex(' ')}"
                     )
                 try:
                     sent = ser.write(packet)
@@ -463,7 +470,14 @@ def main() -> None:
             print(f"SERIAL OPEN {args.port} {SERIAL_BAUDRATE}")
         except Exception as exc:
             print(f"SERIAL OPEN ERROR: {exc!r}")
-            print("Continuing without the serial link.")
+            print(
+                f"!!! NO LINK TO THE STM32 on {args.port}: no packets will be sent, so"
+                " the LEDs, pan/tilt and motors will NOT respond."
+            )
+            print(
+                "!!! Vision still reports detected/locked/status normally -- that is"
+                " the vision half only. Check the port name (ls /dev/ttyACM* /dev/ttyUSB*)."
+            )
 
     name_sender = TargetNameSender()
     show_display = not args.no_display
