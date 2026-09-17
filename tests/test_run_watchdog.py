@@ -396,7 +396,7 @@ def test_tracking_packets_are_unchanged_and_follow_the_name_packet():
         assert frame[9] == checksum
         # The box centres at (150, 150) in a 640x480 frame.
         assert (err_x, err_y) == (150 - FRAME_WIDTH // 2, 150 - FRAME_HEIGHT // 2)
-        assert status in (0x00, 0x01)  # two frames is far short of a lock
+        assert status == 0x03  # one fresh detection asserts DETECTED and LOCKED
         # 100 px of box in a 480 px frame.
         assert size_pct == round(100 * 100 / FRAME_HEIGHT)
 

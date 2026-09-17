@@ -24,7 +24,7 @@ from typing import Any
 
 # Matches vision.detector.DEFAULT_CONFIDENCE: anything the detector is
 # willing to report is a candidate worth ranking.
-MIN_CONFIDENCE = 0.25
+MIN_CONFIDENCE = 0.10
 
 DETECTION_WEIGHT = 0.35
 COLOR_WEIGHT = 0.45

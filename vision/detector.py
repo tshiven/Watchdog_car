@@ -47,7 +47,11 @@ DEFAULT_MODEL = "yolov8n.pt"
 # `--imgsz 640` restores the old behaviour exactly, and the PERF line the
 # runner prints is how to tell whether 320 was needed in the first place.
 DEFAULT_IMGSZ = 320
-DEFAULT_CONFIDENCE = 0.25
+# Dropped from 0.25 to 0.10: on the Pi 4's ~1 FPS loop, waiting for a
+# confident detection costs whole seconds of not tracking. A weak detection
+# now still locks (see LOCKED in run_watchdog.py), so a lower floor trades
+# some false positives for a car that actually follows its target.
+DEFAULT_CONFIDENCE = 0.10
 # Overlap above which two boxes of the same class are treated as one object.
 DEFAULT_IOU = 0.45
 DEFAULT_MAX_DETECTIONS = 50

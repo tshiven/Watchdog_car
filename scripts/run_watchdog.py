@@ -62,10 +62,9 @@ STATUS_LOCKED = "LOCKED"
 STATUS_LOST = "LOST"
 SERIAL_PORT = "COM3"
 SERIAL_BAUDRATE = 115200
-# Frames of unbroken detection before the status byte claims a confident lock.
-# One detected frame is enough to say "something is there"; a lock is a promise
-# the STM32 acts on, so it has to survive a run of frames first.
-LOCK_CONSECUTIVE_FRAMES = 12
+# At the Pi 4's ~1 FPS, waiting for a run of consecutive detections before
+# claiming a lock costs whole seconds of the car not moving. One fresh
+# (non-coasting) detection is now enough to assert LOCKED immediately.
 # Cadence of the status debug line, in processed frames.
 STATUS_DEBUG_EVERY = 12
 # Cadence of the timing line, in seconds. Deliberately measured in wall time
@@ -307,7 +306,10 @@ def track_until_stopped(
             # dead-reckoned frames build a "confident lock" out of stale data.
             detected = outcome.status == STATUS_LOCKED and not outcome.coasting
             consecutive_detections = consecutive_detections + 1 if detected else 0
-            locked = consecutive_detections >= LOCK_CONSECUTIVE_FRAMES
+            # One fresh detection is enough: DETECTED and LOCKED assert
+            # together, and a frame without one clears both immediately (no
+            # coasting/stale frame ever counts as fresh).
+            locked = detected
             status = (STATUS_DETECTED if detected else 0x00) | (
                 STATUS_LOCKED if locked else 0x00
             )
