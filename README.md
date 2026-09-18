@@ -1,6 +1,6 @@
 # Watchdog
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/f7c809f6-397d-4d9b-a3ef-07995f6105b9" width="400">
+  <img src="docs/demo/tracking_demo.png" width="400">
 </p>
 
 </p>
