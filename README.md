@@ -1,4 +1,4 @@
-# Watchdog
+# Watchdog Car Vision
 <p align="center">
   <img src="docs/demo/tracking_demo.png" width="400">
 </p>
