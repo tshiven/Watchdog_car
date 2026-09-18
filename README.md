@@ -4,7 +4,6 @@
 </p>
 
 </p>
-> **Status: under active development.** 
 
 ## Overview
 
@@ -144,4 +143,5 @@ Watchdog_car/
 ├── requirements.txt
 ├── .gitignore
 └── LICENSE
+
 ```
