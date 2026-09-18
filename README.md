@@ -118,8 +118,15 @@ Three things had made small objects track far worse than people:
 
 ## Demo
 
-No demo yet. Screenshots and video will be added to `docs/demo/` as the
-project progresses.
+<p align="center">
+  <img src="docs/demo/tracking_demo.png" width="700">
+</p>
+
+The Pi streams its camera feed and detection overlay to a laptop over
+Raspberry Pi Connect while the rover tracks a hand-held phone target,
+drawing a bounding box and a line from frame center to target center to
+visualize tracking error. More screenshots and video will be added to
+`docs/demo/` as the project progresses.
 
 ## Repository Structure
 
